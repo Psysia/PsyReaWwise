@@ -1,22 +1,25 @@
 -- @description PsyReaWwise WebView · Wwise 音频往返工作台
 -- @author Psysia
 -- @version 0.2.0-beta1
--- @link https://github.com/Psysia/PsyReaWwise/tree/codex/webview
+-- @link https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta1
 
 local api = reaper
 local title = "PsyReaWwise WebView"
 local directory = debug.getinfo(1, "S").source:sub(2):match("^(.*)[\\/]+") or "."
 local locale = loadfile(directory .. "/lib/i18n.lua")
-if not locale then
+local runtime_module = loadfile(directory .. "/lib/runtime.lua")
+if not locale or not runtime_module then
     api.ShowMessageBox("PsyReaWwise files are missing. Reinstall the package.\nPsyReaWwise 文件缺失，请重新安装。", title, 0)
     return
 end
 local i18n = locale()
+local web_runtime = runtime_module()
 local function show(message)
     api.ShowMessageBox(i18n.translator(i18n.windows_language(api))(message), title, 0)
 end
-if type(api.ReaWeb_Open) ~= "function" or type(api.ReaWeb_IsOpen) ~= "function" then
-    show("请安装 PsyReaSFX WebView Runtime 或 ReaWebAPI，然后重启 REAPER。")
+if not web_runtime.available() then
+    local t = i18n.translator(i18n.windows_language(api))
+    api.ShowMessageBox(web_runtime.prepare(directory, t), title, 0)
     return
 end
 

@@ -92,18 +92,21 @@ function files.copy(source, destination)
     end
 end
 
-function files.equal(first_path, second_path)
-    if needs_unicode_io(first_path, second_path) then
-        return windows_file_operation([[
+local windows_hash = [[
 function Read-Hash([string]$path) {
     $hash = [Security.Cryptography.SHA256]::Create()
     try {
         $stream = [IO.File]::OpenRead($path)
-        try { [Convert]::ToBase64String($hash.ComputeHash($stream)) }
+        try { [BitConverter]::ToString($hash.ComputeHash($stream)).Replace('-', '') }
         finally { $stream.Dispose() }
     }
     finally { $hash.Dispose() }
 }
+]]
+
+function files.equal(first_path, second_path)
+    if needs_unicode_io(first_path, second_path) then
+        return windows_file_operation(windows_hash .. [[
 if ((Read-Hash $a) -cne (Read-Hash $b)) { exit 1 }
 ]], first_path, second_path)
     end
@@ -130,11 +133,8 @@ if ((Read-Hash $a) -cne (Read-Hash $b)) { exit 1 }
     return equal
 end
 
-function files.publish(source, destination, replace)
-    local action = replace
-        and "[IO.File]::Replace($temp, $b, [System.Management.Automation.Language.NullString]::Value)"
-        or "[IO.File]::Move($temp, $b)"
-    local ok, reason = windows_file_operation([[
+local function publish_staged(source, destination, action)
+    return windows_file_operation([[
 $temp = [IO.Path]::Combine([IO.Path]::GetDirectoryName($b), '.psyreawwise-' + [Guid]::NewGuid().ToString('N') + '.tmp')
 try {
     [IO.File]::Copy($a, $temp, $false)
@@ -144,7 +144,23 @@ try {
     if ([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) }
 }
 ]], source, destination)
+end
+
+function files.publish(source, destination, replace)
+    local action = replace
+        and "[IO.File]::Replace($temp, $b, [System.Management.Automation.Language.NullString]::Value)"
+        or "[IO.File]::Move($temp, $b)"
+    local ok, reason = publish_staged(source, destination, action)
     assert(ok, t("无法写入 Samples 文件\n") .. destination .. "\n" .. tostring(reason))
+end
+
+function files.install_runtime(source, destination)
+    return publish_staged(source, destination, windows_hash .. [[
+    $lockPath = Join-Path ([IO.Path]::GetDirectoryName($a)) 'runtime-lock.json'
+    $lock = ConvertFrom-Json ([IO.File]::ReadAllText($lockPath))
+    if ((Read-Hash $temp) -ine $lock.binary.sha256) { exit 2 }
+    [IO.File]::Move($temp, $b)
+]])
 end
 
 return files

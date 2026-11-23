@@ -6,11 +6,11 @@ PsyReaWwise WebView 0.2.0 Beta 1 is a dockable ReaWebAPI workbench for editing W
 
 ## Install in REAPER
 
-1. Install **PsyReaSFX WebView Runtime** from the PRS ReaPack subscription, or install the corresponding ReaWebAPI extension. Restart REAPER after installing a native extension. [ReaWebAPI documentation](https://github.com/Psysia/ReaWebAPI)
-2. Keep `PsyReaWwise_WebView.lua`, `PsyReaWwise_WebView_Runtime.lua`, `lib`, and `web` in the same folder. In the REAPER Action List, choose **New action → Load ReaScript** and select `PsyReaWwise_WebView.lua`. Run **PsyReaWwise WebView**. Running the action again focuses its open window.
-3. In Wwise User Preferences, enable WAAPI and open a Wwise project. The workbench defaults to the local WAMP endpoint `127.0.0.1:8080`.
+1. Synchronize the PRS ReaPack subscription and install **PsyReaWwise WebView**. The package includes the panel and the PRS ReaWebAPI runtime. For an offline install, extract the full Windows x64 ZIP and load `PsyReaWwise_WebView.lua` from the REAPER Action List. [Release and offline ZIP](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta1)
+2. Run **PsyReaWwise WebView**. A compatible active ReaWebAPI is reused. On a fresh setup the action installs the checked bundled runtime, then prompts you to restart REAPER once. Running the action when the panel is open focuses it.
+3. Install ReaWwise 1.0.4 or later for WAAPI. Enable WAAPI in Wwise User Preferences and open a project. The workbench defaults to the local WAMP endpoint `127.0.0.1:8080`.
 
-This version targets Windows x64 and requires the REAPER 7 region APIs, ReaWebAPI with its Lua message bridge, and ReaWwise 1.0.4 or later. The intended runtime is the PRS WebView Runtime 0.3.9.30 or a compatible ReaWebAPI build.
+This version targets Windows x64 and the REAPER 7.86 region APIs. The bundled ReaWebAPI 0.3.9.30-prs.3 is the same LGPL-3.0-or-later runtime used by PRS 0.9.4 Beta 8. The package includes the matching source archive and license notices. [ReaWebAPI documentation](https://github.com/Psysia/ReaWebAPI)
 
 The panel loads the language selected in PsyReaSFX when that preference is available. It uses the Windows display language for setup prompts and when no PRS language is saved. Chinese display languages use the Simplified Chinese interface.
 

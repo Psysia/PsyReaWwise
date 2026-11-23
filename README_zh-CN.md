@@ -6,11 +6,11 @@ PsyReaWwise WebView 0.2.0 Beta 1 是基于 ReaWebAPI 的可停靠工作台。可
 
 ## 安装到 REAPER
 
-1. 从 PRS ReaPack 订阅安装 **PsyReaSFX WebView Runtime**，也可使用对应的 ReaWebAPI 扩展。安装原生扩展后重启 REAPER。[ReaWebAPI 文档](https://github.com/Psysia/ReaWebAPI)
-2. 将 `PsyReaWwise_WebView.lua`、`PsyReaWwise_WebView_Runtime.lua`、`lib` 和 `web` 保持在同一目录。在 REAPER 的 Action List 选择 **New action → Load ReaScript**，加载并运行 `PsyReaWwise_WebView.lua`。重复运行动作会聚焦已打开的窗口。
-3. 在 Wwise 的 User Preferences 启用 WAAPI 并打开工程。面板默认使用本机 `127.0.0.1` 的 WAMP 端口 `8080`。
+1. 同步 PRS ReaPack 订阅，安装 **PsyReaWwise WebView**。面板和 PRS 的 ReaWebAPI 运行时随包提供。离线安装时，解压完整 Windows x64 ZIP，在 REAPER 的 Action List 加载 `PsyReaWwise_WebView.lua`。[发布页与离线包](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta1)
+2. 运行 **PsyReaWwise WebView**。已加载兼容的 ReaWebAPI 时直接复用。首次安装时，动作会校验并准备随包运行时，然后提示完整重启一次 REAPER。面板打开后再次运行动作会聚焦窗口。
+3. 安装 ReaWwise 1.0.4 或更新版以提供 WAAPI。在 Wwise 的 User Preferences 启用 WAAPI 并打开工程。面板默认使用本机 `127.0.0.1` 的 WAMP 端口 `8080`。
 
-当前版本面向 Windows x64，依赖 REAPER 7 的区间 API、ReaWebAPI 的 Lua 消息接口和 ReaWwise 1.0.4 或更新版本。适用于 PRS WebView Runtime 0.3.9.30 或兼容的 ReaWebAPI 版本。
+当前版本面向 Windows x64 和 REAPER 7.86 的区间 API。随包提供的 ReaWebAPI 0.3.9.30-prs.3 与 PRS 0.9.4 Beta 8 使用同一版本，采用 LGPL-3.0-or-later，包内包含匹配源码和许可证声明。[ReaWebAPI 文档](https://github.com/Psysia/ReaWebAPI)
 
 面板启动时读取 PsyReaSFX 中保存的界面语言。启动提示，以及没有保存 PRS 语言时的面板，使用 Windows 显示语言。中文显示语言对应简体中文界面。
 

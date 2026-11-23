@@ -1,0 +1,15 @@
+{
+  "version": "0.3.9.30-prs.3",
+  "platform": "windows-x64",
+  "license": "LGPL-3.0-or-later",
+  "repository": "https://github.com/Psysia/ReaWebAPI",
+  "commit": "bab1f3038813294beb12b7e4ecd9f09554d0ac0b",
+  "binary": {
+    "url": "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.4-beta8/reaper_reawebapi-x64.dll",
+    "sha256": "ed692c39da0b016e07426f0dd04547698ce0d9881792b02613b9afa907eb7299"
+  },
+  "source": {
+    "url": "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.4-beta8/ReaWebAPI-source.zip",
+    "sha256": "5d84acb77bb5f4578563adb9795b8482aa8e7352e8be7955735d8d89fd452993"
+  }
+}

@@ -18,12 +18,11 @@ local function module(name, ...)
     return chunk(...)
 end
 
-for _, name in ipairs({"ReaWeb_Open", "ReaWeb_IsOpen", "ReaWeb_IsReady", "ReaWeb_Send", "ReaWeb_Receive", "ReaWeb_Close"}) do
-    if type(api[name]) ~= "function" then
-        api.ShowMessageBox(i18n.translator(i18n.windows_language(api))(
-            "请安装 PsyReaSFX WebView Runtime 或 ReaWebAPI，然后重启 REAPER。"), title, 0)
-        return
-    end
+local web_runtime = module("runtime")
+if not web_runtime.available() then
+    api.ShowMessageBox(i18n.translator(i18n.windows_language(api))(
+        "请运行 PsyReaWwise WebView 动作以准备随包运行时。"), title, 0)
+    return
 end
 if not api.APIExists("GetRegionOrMarker") then
     api.ShowMessageBox(t("请使用支持区间选择接口的 REAPER 7。此版本以 REAPER 7.86 为目标。"), title, 0)
