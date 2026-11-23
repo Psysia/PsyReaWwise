@@ -1,3 +1,4 @@
+local t = ...
 local wwise = {}
 local api = reaper
 
@@ -25,13 +26,13 @@ local function call(uri, arguments, options, read_result)
         if #value > 0 then
             local array = keep(api.AK_AkJson_Array())
             for _, entry in ipairs(value) do
-                assert(api.AK_AkJson_Array_Add(array, encode(entry)))
+                assert(api.AK_AkJson_Array_Add(array, encode(entry)), t("无法生成 WAAPI 参数。请重新打开工作台。"))
             end
             return array
         end
         local map = keep(api.AK_AkJson_Map())
         for key, entry in pairs(value) do
-            assert(api.AK_AkJson_Map_Set(map, key, encode(entry)))
+            assert(api.AK_AkJson_Map_Set(map, key, encode(entry)), t("无法生成 WAAPI 参数。请重新打开工作台。"))
         end
         return map
     end
@@ -62,10 +63,10 @@ local function call(uri, arguments, options, read_result)
 
     local ok, result = pcall(function()
         local response = api.AK_Waapi_Call(uri, encode(arguments), encode(options))
-        assert(keep(response), "WAAPI 未返回结果。")
+        assert(keep(response), t("WAAPI 未返回结果。"))
         if not api.AK_AkJson_GetStatus(response) then
             local message = field(response, "message")
-            error(uri .. "\n" .. (message ~= "" and message or "调用失败。"), 0)
+            error(t("WAAPI 请求失败。请核对当前 Wwise 工程和操作目标。\n") .. uri .. "\n" .. message, 0)
         end
         return read_result(response, field, rows, member, string_value)
     end)
@@ -77,10 +78,10 @@ local function call(uri, arguments, options, read_result)
 end
 
 function wwise.session(port, operation)
-    assert(wwise.available(), "需要安装 ReaWwise 1.0.4 或以上版本。")
+    assert(wwise.available(), t("需要安装 ReaWwise 1.0.4 或以上版本。"))
     local already_connected = api.APIExists("AK_Waapi_IsConnected") and api.AK_Waapi_IsConnected()
     if not api.AK_Waapi_Connect("127.0.0.1", port) then
-        error(("无法连接 WAAPI 127.0.0.1:%d。请打开 Wwise 工程并启用 WAAPI。"):format(port), 0)
+        error((t("无法连接 WAAPI 127.0.0.1:%d。请打开 Wwise 工程并启用 WAAPI。")):format(port), 0)
     end
     local ok, result = pcall(operation)
     if not already_connected then api.AK_Waapi_Disconnect() end
@@ -96,7 +97,7 @@ function wwise.project()
             path = field(result, "path"),
             originals = field(member(result, "directories"), "originals"),
         }
-        assert(project.id ~= "" and project.path ~= "" and project.originals ~= "", "请在 Wwise 中打开一个工程。")
+        assert(project.id ~= "" and project.path ~= "" and project.originals ~= "", t("请在 Wwise 中打开一个工程。"))
         return project
     end)
 end
@@ -120,7 +121,7 @@ local function query(ids, suffix)
     if #ids == 0 then return {} end
     local quoted = {}
     for index, id in ipairs(ids) do
-        assert(id:match("^%{[%x%-]+%}$"), "无效的 Wwise 对象 GUID。")
+        assert(id:match("^%{[%x%-]+%}$"), t("无效的 Wwise 对象 GUID。"))
         quoted[index] = '"' .. id .. '"'
     end
     local waql = "$ from object " .. table.concat(quoted, ", ") .. suffix
@@ -213,7 +214,7 @@ local function import_audio(target_id, object_path, language, subfolder, wav_pat
             end)
             for _, entry in ipairs(log) do
                 if entry.severity:lower():find("error", 1, true) then
-                    error("Wwise 导入失败\n" .. entry.message, 0)
+                    error(t("Wwise 导入失败\n") .. entry.message, 0)
                 end
             end
             return rows(result, "objects", function(row)

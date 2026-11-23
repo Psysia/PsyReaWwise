@@ -1,3 +1,4 @@
+local t = ...
 local files = {}
 local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
@@ -64,15 +65,15 @@ end
 function files.copy(source, destination)
     if needs_unicode_io(source, destination) then
         local ok, reason = windows_file_operation("[IO.File]::Copy($a, $b, $false)", source, destination)
-        assert(ok, "无法复制 " .. source .. "\n" .. tostring(reason))
+        assert(ok, t("无法复制 ") .. source .. "\n" .. tostring(reason))
         return
     end
     local input, reason = io.open(source, "rb")
-    assert(input, "无法读取 " .. source .. "\n" .. tostring(reason))
+    assert(input, t("无法读取 ") .. source .. "\n" .. tostring(reason))
     local output, open_error = io.open(destination, "wb")
     if not output then
         input:close()
-        error("无法写入 " .. destination .. "\n" .. tostring(open_error), 0)
+        error(t("无法写入 ") .. destination .. "\n" .. tostring(open_error), 0)
     end
 
     local ok, copy_error = pcall(function()
@@ -87,7 +88,7 @@ function files.copy(source, destination)
     local closed, close_error = output:close()
     if not ok or not closed then
         os.remove(destination)
-        error("复制失败 " .. source .. "\n" .. tostring(copy_error or close_error), 0)
+        error(t("复制失败 ") .. source .. "\n" .. tostring(copy_error or close_error), 0)
     end
 end
 
@@ -143,7 +144,7 @@ try {
     if ([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) }
 }
 ]], source, destination)
-    assert(ok, "无法写入 Samples 文件\n" .. destination .. "\n" .. tostring(reason))
+    assert(ok, t("无法写入 Samples 文件\n") .. destination .. "\n" .. tostring(reason))
 end
 
 return files

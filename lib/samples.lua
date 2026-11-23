@@ -1,4 +1,4 @@
-local files = ...
+local files, t = ...
 local samples = {}
 local section, key = "PsyReaWwise", "SamplesFolder"
 
@@ -22,8 +22,8 @@ function samples.plan(entries, directory)
     for _, entry in ipairs(entries) do
         local path = files.join(directory, files.name(entry.source.wav))
         local path_key = files.key(path)
-        assert(not originals[path_key], "Samples 和 Wwise Originals 指向同一个文件\n" .. path)
-        assert(not seen[path_key], "多个渲染目标在 Samples 中重名\n" .. path)
+        assert(not originals[path_key], t("Samples 和 Wwise Originals 指向同一个文件\n") .. path)
+        assert(not seen[path_key], t("多个渲染目标在 Samples 中重名\n") .. path)
         seen[path_key] = true
         entry.sample = {path = path, exists = reaper.file_exists(path)}
     end
@@ -37,7 +37,7 @@ end
 function samples.backup(entry, directory, index)
     local sample = entry.sample
     if not sample then return end
-    assert(reaper.file_exists(sample.path) == sample.exists, "Samples 文件状态发生变化，请重新预览\n" .. sample.path)
+    assert(reaper.file_exists(sample.path) == sample.exists, t("Samples 文件状态发生变化，请重新预览\n") .. sample.path)
     if sample.exists then
         local folder = files.join(directory, "SamplesBackup/" .. index)
         reaper.RecursiveCreateDirectory(folder, 0)
@@ -51,9 +51,9 @@ function samples.verify(entry)
     local sample = entry.sample
     if not sample then return end
     if sample.exists then
-        assert(files.equal(sample.path, sample.backup), "Samples 文件在传输期间发生变化\n" .. sample.path)
+        assert(files.equal(sample.path, sample.backup), t("Samples 文件在传输期间发生变化\n") .. sample.path)
     else
-        assert(not reaper.file_exists(sample.path), "Samples 文件在传输期间新增\n" .. sample.path)
+        assert(not reaper.file_exists(sample.path), t("Samples 文件在传输期间新增\n") .. sample.path)
     end
 end
 
@@ -62,7 +62,7 @@ function samples.publish(entry)
     if not sample then return end
     samples.verify(entry)
     files.publish(entry.replacement, sample.path, sample.exists)
-    assert(files.equal(entry.replacement, sample.path), "Samples 的 WAV 校验失败\n" .. sample.path)
+    assert(files.equal(entry.replacement, sample.path), t("Samples 的 WAV 校验失败\n") .. sample.path)
 end
 
 return samples

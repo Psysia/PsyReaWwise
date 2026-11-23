@@ -4,18 +4,18 @@
 
 REAPER 内的 Wwise 音频工作台。可以取回 Wwise 原始音频，也可以把同一份渲染 WAV 传给 Wwise 并同步到 REAPER 工程的 `Samples`。
 
-## 加载到 REAPER
+## 安装到 REAPER
 
-1. 保留 `PsyReaWwise.lua` 和旁边的 `lib` 目录。在 REAPER 的 Action List 选择 **New action → Load ReaScript**，加载 `PsyReaWwise.lua`，运行对应动作。
-2. 打开 Wwise 工程，在 Wwise 的 User Preferences 启用 WAAPI。面板默认使用本机 `127.0.0.1` 的 WAMP 端口 `8080`。
+1. 同步现有的 **Psysia ReaPack Repository**，在 ReaPack 中搜索并安装 **PsyReaWwise**。首次添加 PRS 时使用原有订阅链接。[PRS ReaPack 索引](https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml)
+2. 从 REAPER 的 Action List 运行 **PsyReaWwise**。在 Wwise 的 User Preferences 启用 WAAPI 并打开工程。面板默认使用本机 `127.0.0.1` 的 WAMP 端口 `8080`。
 
 当前版本面向 Windows，依赖 REAPER 7 的区间 API、ReaImGui 0.10 和 ReaWwise 1.0.4 或更新版本。用于开发的本机版本为 REAPER 7.86、ReaWwise 1.1.0 和 Wwise 2025.1.12。
 
-开发版已通过 WwiseConsole 和模拟 REAPER 接口的流程测试。实际 REAPER 面板和原生渲染仍待实机验证。
+面板启动时读取 PsyReaSFX 中保存的界面语言。启动提示，以及没有保存 PRS 语言时的面板，使用 Windows 显示语言。中文显示语言对应简体中文界面。
 
-### ReaPack 分发
+工作台已通过 WwiseConsole 和模拟 REAPER 接口的流程测试。实际 REAPER 面板和原生渲染仍待实机验证。
 
-PsyReaWwise 在独立仓库维护。ReaPack 分发沿用 [Psysia ReaPack Repository](https://github.com/Psysia/PsyReaSFX/blob/main/index.xml) 的订阅入口。发布时，索引需要为主脚本和 `lib` 模块配置同一版本的可公开下载文件，并保留模块相对于主脚本的路径。当前开发版可按上面的步骤从 Action List 加载。
+从源码手动加载时，保留 `PsyReaWwise.lua` 和旁边的 `lib` 目录。在 Action List 选择 **New action → Load ReaScript**，加载主脚本。
 
 ## 传输到 Wwise 和 Samples
 
