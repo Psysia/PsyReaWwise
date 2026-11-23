@@ -1,34 +1,36 @@
-# PsyReaWwise
+# PsyReaWwise WebView
 
 **English** · [简体中文](README_zh-CN.md)
 
-PsyReaWwise is a REAPER workbench for editing Wwise audio. Pull original audio into REAPER, then send the same rendered WAV to Wwise and to the REAPER project's `Samples` folder.
+PsyReaWwise WebView 0.2.0 Beta 1 is a dockable ReaWebAPI workbench for editing Wwise audio. Pull originals into REAPER, then send the same rendered WAV to Wwise and the REAPER project's `Samples` folder. [PsyReaWwise 0.1.0 release](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.1.0)
 
 ## Install in REAPER
 
-1. Synchronize the existing **Psysia ReaPack Repository**, then search for **PsyReaWwise** in ReaPack and install it. Use the existing subscription URL when adding PRS for the first time. [PRS ReaPack index](https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml)
-2. Run **PsyReaWwise** from the REAPER Action List. In Wwise User Preferences, enable WAAPI and open a Wwise project. The workbench defaults to the local WAMP endpoint `127.0.0.1:8080`.
+1. Install **PsyReaSFX WebView Runtime** from the PRS ReaPack subscription, or install the corresponding ReaWebAPI extension. Restart REAPER after installing a native extension. [ReaWebAPI documentation](https://github.com/Psysia/ReaWebAPI)
+2. Keep `PsyReaWwise_WebView.lua`, `PsyReaWwise_WebView_Runtime.lua`, `lib`, and `web` in the same folder. In the REAPER Action List, choose **New action → Load ReaScript** and select `PsyReaWwise_WebView.lua`. Run **PsyReaWwise WebView**. Running the action again focuses its open window.
+3. In Wwise User Preferences, enable WAAPI and open a Wwise project. The workbench defaults to the local WAMP endpoint `127.0.0.1:8080`.
 
-This version targets Windows and requires the REAPER 7 region APIs, ReaImGui 0.10, and ReaWwise 1.0.4 or later. The development setup uses REAPER 7.86, ReaWwise 1.1.0, and Wwise 2025.1.12.
+This version targets Windows x64 and requires the REAPER 7 region APIs, ReaWebAPI with its Lua message bridge, and ReaWwise 1.0.4 or later. The intended runtime is the PRS WebView Runtime 0.3.9.30 or a compatible ReaWebAPI build.
 
 The panel loads the language selected in PsyReaSFX when that preference is available. It uses the Windows display language for setup prompts and when no PRS language is saved. Chinese display languages use the Simplified Chinese interface.
 
-The workbench passed workflow tests with WwiseConsole and mocked REAPER APIs. The native REAPER panel and rendering still need a host test.
+The bilingual panel passed headless Chromium tests with a mock bridge. The Lua message handlers and transfer workflow passed WwiseConsole tests with mocked REAPER APIs. Docking and native rendering still need an in-REAPER test.
 
-To load a source checkout manually, keep `PsyReaWwise.lua` and `lib` together. Select the script through **New action → Load ReaScript** in the Action List.
+## Replace WAVs from selected regions
 
-## Transfer to Wwise and Samples
+1. Select the regions in REAPER and the corresponding WAVs in the Wwise Media Pool or their sources or Sounds. Click **Preview transfer**. The graph shows the REAPER regions on the left and the selected Wwise Originals WAVs on the right.
+2. Unique names connect automatically, ignoring case and the `.wav` extension. To pair any region manually, click its node and then the Wwise WAV. Repeat with a connected pair to disconnect it. The WAV's path identifies its folder when names repeat.
+3. **Sync to Samples** starts checked. The default folder is `Samples` next to the current `.rpp`. Choose an existing export folder if needed. With sync enabled, each connected WAV node shows whether its Samples copy will be added or replaced.
+4. Click **Render and replace** to process the connected pairs. Each region renders its master mix at the original WAV's sample rate and channel count. The verified replacement keeps the Wwise filename and source GUID. The REAPER region adopts the WAV's name without the extension. Region renames are grouped in one REAPER undo step.
 
-1. Save the `.rpp`. The default `Samples` folder sits next to it and can be created on the first transfer. To use an existing output folder, click **Choose Samples folder**. REAPER stores the choice in the project.
-2. Set the render bounds and file names in REAPER's Render dialog. In Wwise, select an audio source, Sound, or container to use as the destination reference.
-3. In **Transfer to Wwise**, choose **Same level / Inside container** or **One level up**. At the same level, a Sound uses its own container and Originals folder. A selected container is used directly. One level up moves both the Wwise destination container and the Originals subfolder up one level.
-4. Click **Preview transfer**. A reference in `Originals/SFX/UI/Buttons/` targets `Buttons` at the same level and `UI` one level up. The preview lists new or updated Wwise sounds and added or replaced files in `Samples`. Select a specific source if the reference spans multiple Originals folders.
-5. Click **Render and transfer**. The workbench renders 24-bit WAV files using the current REAPER bounds and file names, then uses each WAV for both destinations. A matched Wwise source keeps its GUID. The result shows where to find backups of replaced Originals and `Samples` files.
+## Transfer using REAPER render settings
 
-Use **Open ReaWwise advanced transfer** for the official ReaWwise hierarchy presets. Samples synchronization is part of the workbench's **Render and transfer** and **Render and replace** actions.
+With no regions selected, the preview uses the current REAPER render bounds and filenames. Select a Wwise source, Sound, or container as the destination reference, then choose **Same level / Inside container** or **One level up**. For example, a source in `Originals/SFX/UI/Buttons/` targets `Buttons` at the same level and `UI` one level up. Select a specific source if the reference spans multiple Originals folders.
+
+Review the destination and click **Render and transfer**. The 24-bit WAVs go to Wwise and, with sync enabled, the REAPER project's Samples folder.
 
 ## Pull and update existing sources
 
 - In **Import into REAPER**, read the Wwise selection and choose the sources you want. The workbench copies the media into REAPER's media directory, places items from the edit cursor, and can create a region for each item. You can also bind an existing item or region to a source. Switch between item and region mode in **Update existing sources**.
-- For a bound item or region, preview and run the update. Items render individually. Regions render the master mix over their bounds. The update preserves the sample rate and mono or stereo channel count of the original WAV and synchronizes `Samples`. The preview lists shared Originals references.
+- For a bound item or region, preview and run the update. Items render individually. Regions render the master mix over their bounds. The update preserves the original WAV's sample rate and mono or stereo channel count. **Sync to Samples** also applies here. The preview lists shared Originals references.
 - Staged renders and backups are in `PsyReaWwise/Transfers` under the REAPER media directory. If a transfer stops partway through, the workbench reports the number of verified Wwise files and the number of synchronized `Samples` files.

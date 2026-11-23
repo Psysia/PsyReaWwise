@@ -157,6 +157,14 @@ function wwise.selected_objects()
         end)
 end
 
+function wwise.selected_files()
+    -- Older versions of Wwise and WwiseConsole may not expose this UI procedure.
+    local ok, paths = pcall(call, "ak.wwise.ui.getSelectedFiles", {}, {}, function(result, _, rows, _, string_value)
+        return rows(result, "files", string_value)
+    end)
+    return ok and paths or {}
+end
+
 function wwise.selected_sources(selected)
     selected = selected or wwise.selected_objects()
     local selected_sources, selected_parents = {}, {}
@@ -175,23 +183,27 @@ function wwise.selected_sources(selected)
     return sources
 end
 
-function wwise.file_usage(relative)
+function wwise.file_usage(relative, cache)
     local folder = relative:match("^(.*)[\\/][^\\/]+$")
-    return call("ak.wwise.core.sourceControl.getSourceFiles", {folder = folder, recursive = false, filter = "used"},
-        {['return'] = {"file", "usage"}, objectReturn = {"id", "path"}}, function(result, field, rows)
-            local listed = rows(result, "return", function(row)
-                return {
-                    file = field(row, "file"),
-                    usage = rows(row, "usage", function(item) return {id = field(item, "id"), path = field(item, "path")} end),
-                }
-            end)
-            for _, row in ipairs(listed) do
-                if row.file:gsub("/", "\\"):lower() == relative:gsub("/", "\\"):lower() then
-                    return row.usage
+    local key = folder and folder:gsub("/", "\\"):lower() or ""
+    local by_file = cache and cache[key]
+    if not by_file then
+        by_file = call("ak.wwise.core.sourceControl.getSourceFiles", {folder = folder, recursive = false, filter = "used"},
+            {['return'] = {"file", "usage"}, objectReturn = {"id", "path"}}, function(result, field, rows)
+                local indexed = {}
+                for _, row in ipairs(rows(result, "return", function(item)
+                    return {
+                        file = field(item, "file"),
+                        usage = rows(item, "usage", function(use) return {id = field(use, "id"), path = field(use, "path")} end),
+                    }
+                end)) do
+                    indexed[row.file:gsub("/", "\\"):lower()] = row.usage
                 end
-            end
-            return {}
-        end)
+                return indexed
+            end)
+        if cache then cache[key] = by_file end
+    end
+    return by_file[relative:gsub("/", "\\"):lower()] or {}
 end
 
 local function import_audio(target_id, object_path, language, subfolder, wav_path)

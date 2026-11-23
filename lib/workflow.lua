@@ -88,6 +88,12 @@ local function prepare_target(origin, source, known_usage)
     return usage, table.concat(keys, "\n")
 end
 
+local function existing_entry(selection, source, usage, usage_key)
+    local info = project.audio_info(source.wav)
+    assert(info.channels <= 2, t("更新现有音源目前支持单声道或立体声 WAV\n") .. source.wav)
+    return {selection = selection, source = source, info = info, usage = usage, usage_key = usage_key}
+end
+
 local function selection_ids(entries, origin)
     local ids, seen = {}, {}
     for index, entry in ipairs(entries) do
@@ -117,9 +123,7 @@ local function make_plan(current, port, mode, sample_directory)
             local path_key = files.key(source.wav)
             assert(not paths[path_key], t("多个选中内容指向同一个 Originals 文件\n") .. source.wav)
             paths[path_key] = true
-            local info = project.audio_info(source.wav)
-            assert(info.channels <= 2, t("更新现有音源目前支持单声道或立体声 WAV\n") .. source.wav)
-            entries[#entries + 1] = {selection = selection[index], source = source, info = info, usage = usage, usage_key = usage_key}
+            entries[#entries + 1] = existing_entry(selection[index], source, usage, usage_key)
         end
         samples.plan(entries, sample_directory)
         return {current = current, port = port, mode = mode, origin = origin, entries = entries,
@@ -156,11 +160,7 @@ local function verify_sample_directory(preview)
     assert(current and files.key(current) == files.key(preview.sample_directory), t("Samples 目录已变化，请重新预览。"))
 end
 
-function workflow.update(preview)
-    assert(reaper.EnumProjects(-1, "") == preview.current, t("REAPER 已切换工程，请重新预览。"))
-    verify_sample_directory(preview)
-    local plan = make_plan(preview.current, preview.port, preview.mode, preview.sample_directory)
-    check_preview(preview, plan)
+local function publish_existing(plan)
     local directory = project.directory(plan.current, "Transfers")
     local completed, mirrored = 0, 0
 
@@ -180,17 +180,18 @@ function workflow.update(preview)
         end
 
         project.render(plan.current, plan.mode, plan.entries)
+        assert(reaper.EnumProjects(-1, "") == plan.current, t("REAPER 已切换工程，请重新预览。"))
 
         wwise.session(plan.port, function()
             local origin = verify_origin(plan.origin)
-            local ids = {}
+            local ids, usage_cache = {}, {}
             for index, entry in ipairs(plan.entries) do ids[index] = entry.source.id end
             local sources = wwise.sources(ids)
 
             for _, entry in ipairs(plan.entries) do
                 local current = sources[entry.source.id:lower()]
                 assert(current and same_target(entry.source, current), t("Wwise 音源目标发生变化\n") .. entry.source.path)
-                local _, usage_key = prepare_target(origin, current)
+                local _, usage_key = prepare_target(origin, current, wwise.file_usage(current.relative, usage_cache))
                 assert(usage_key == entry.usage_key, t("Wwise 文件引用发生变化\n") .. current.path)
                 assert(files.equal(current.wav, entry.backup), t("Originals 文件在渲染期间发生变化\n") .. current.wav)
             end
@@ -218,12 +219,144 @@ function workflow.update(preview)
         end)
     end)
 
+    if plan.region_draft and completed > 0 then
+        local renamed, rename_error = pcall(project.rename_regions, plan.current, plan.entries, completed)
+        if not renamed then
+            problem = ok and rename_error or (tostring(problem) .. "\n" .. tostring(rename_error))
+            ok = false
+        end
+    end
+
     if not ok then
         local summary = (t("已核验 %d / %d 个更新。")):format(completed, #plan.entries)
         if plan.sample_directory then summary = summary .. (t(" Samples 已同步 %d 个。")):format(mirrored) end
         error(summary .. "\n" .. tostring(problem) .. t("\n暂存与备份目录\n") .. directory, 0)
     end
     return {count = completed, mirrored = mirrored, directory = directory, sample_directory = plan.sample_directory}
+end
+
+function workflow.update(preview)
+    assert(reaper.EnumProjects(-1, "") == preview.current, t("REAPER 已切换工程，请重新预览。"))
+    verify_sample_directory(preview)
+    local plan = make_plan(preview.current, preview.port, preview.mode, preview.sample_directory)
+    check_preview(preview, plan)
+    return publish_existing(plan)
+end
+
+local function selected_wav_sources(origin, cache)
+    local selected_files = wwise.selected_files()
+    if #selected_files == 0 then return wwise.selected_sources() end
+
+    local prefix = files.key(origin.originals) .. "/"
+    local wanted, ids, seen = {}, {}, {}
+    for _, path in ipairs(selected_files) do
+        local key = files.key(path)
+        if key:sub(1, #prefix) == prefix and key:match("%.wav$") and not wanted[key] then
+            wanted[key] = true
+            local relative = path:sub(#prefix + 1):gsub("/", "\\")
+            for _, use in ipairs(wwise.file_usage(relative, cache)) do
+                if not seen[use.id:lower()] then
+                    ids[#ids + 1] = use.id
+                    seen[use.id:lower()] = true
+                end
+            end
+        end
+    end
+    local sources = {}
+    for _, source in pairs(wwise.sources(ids)) do
+        if wanted[files.key(source.wav)] then sources[#sources + 1] = source end
+    end
+    return sources
+end
+
+local function read_region_transfer(current, port, regions, expected_origin)
+    return wwise.session(port, function()
+        local origin = expected_origin and verify_origin(expected_origin) or wwise.project()
+        local usage_cache, seen, targets, by_id = {}, {}, {}, {}
+        local sources = selected_wav_sources(origin, usage_cache)
+        table.sort(sources, function(a, b)
+            if a.path ~= b.path then return a.path < b.path end
+            return a.id < b.id
+        end)
+        for _, source in ipairs(sources) do
+            local key = files.key(source.wav)
+            if key:match("%.wav$") and source.relative ~= "" and not seen[key] then
+                local usage, usage_key = prepare_target(origin, source, wwise.file_usage(source.relative, usage_cache))
+                local target = {source = source, name = files.name(source.wav), usage = usage, usage_key = usage_key}
+                targets[#targets + 1], by_id[source.id], seen[key] = target, target, true
+            end
+        end
+        assert(#targets > 0, t("请在 Wwise 中选择工程已引用的 WAV 或对应的 Sound。"))
+        return {current = current, port = port, origin = origin, regions = regions, targets = targets, by_id = by_id}
+    end)
+end
+
+function workflow.read_region_transfer(current, port)
+    local regions = project.selection(current, "regions")
+    if #regions > 0 then return read_region_transfer(current, port, regions) end
+end
+
+local function wav_stem(name)
+    return name:lower():gsub("%.wav$", "")
+end
+
+function workflow.match_regions(draft)
+    local regions, wavs, links = {}, {}, {}
+    for _, region in ipairs(draft.regions) do
+        local key = wav_stem(region.name)
+        if region.can_render and key ~= "" then regions[key] = regions[key] == nil and region.id end
+    end
+    for _, target in ipairs(draft.targets) do
+        local key = wav_stem(target.name)
+        wavs[key] = wavs[key] == nil and target.source.id
+    end
+    for name, id in pairs(regions) do
+        if id and wavs[name] then links[id] = wavs[name] end
+    end
+    return links
+end
+
+function workflow.preview_region_transfer(draft, links, sample_directory)
+    local invalid = t("区间和 Wwise WAV 必须一对一连接。请检查连线。")
+    assert(type(links) == "table", invalid)
+    local entries, seen, validated = {}, {}, {}
+    for _, region in ipairs(draft.regions) do
+        local id = links[region.id]
+        if id ~= nil then
+            local target = draft.by_id[id]
+            assert(target and not seen[id], invalid)
+            assert(region.can_render, t("选中内容无法渲染\n") .. region.name)
+            entries[#entries + 1] = existing_entry(region, target.source, target.usage, target.usage_key)
+            validated[region.id], seen[id] = id, true
+        end
+    end
+    for region in pairs(links) do assert(validated[region], invalid) end
+    samples.plan(entries, sample_directory)
+    return {current = draft.current, port = draft.port, mode = "regions", origin = draft.origin, entries = entries,
+        sample_directory = sample_directory, region_draft = draft, links = validated}
+end
+
+local function refresh_region_plan(preview)
+    local before = preview.region_draft
+    local actual = project.selection(preview.current, "regions")
+    local original = {}
+    for _, region in ipairs(before.regions) do original[region.id] = region end
+    assert(#actual == #before.regions, t("REAPER 选择发生变化，请重新预览。"))
+    for _, region in ipairs(actual) do
+        local previous = original[region.id]
+        assert(previous and region.name == previous.name and region.first == previous.first and region.last == previous.last,
+            t("REAPER 区间选择、名称或范围已变化，请重新预览。"))
+    end
+
+    local refreshed = read_region_transfer(preview.current, preview.port, actual, before.origin)
+    assert(#refreshed.targets == #before.targets, t("Wwise 选中的 WAV 已变化，请重新预览。"))
+    for _, target in ipairs(before.targets) do
+        assert(refreshed.by_id[target.source.id], t("Wwise 选中的 WAV 已变化，请重新预览。"))
+    end
+
+    local plan = workflow.preview_region_transfer(refreshed, preview.links, preview.sample_directory)
+    check_preview(preview, plan)
+    return plan
 end
 
 local container_types = {
@@ -354,6 +487,10 @@ end
 function workflow.transfer(preview)
     assert(reaper.EnumProjects(-1, "") == preview.current, t("REAPER 已切换工程，请重新预览。"))
     verify_sample_directory(preview)
+    if preview.region_draft then
+        return publish_existing(refresh_region_plan(preview))
+    end
+    assert(#project.selection(preview.current, "regions") == 0, t("REAPER 选择发生变化，请重新预览。"))
     local plan = make_transfer_plan(preview.current, preview.port, preview.mode, preview.sample_directory, preview.directory)
     assert(same_origin(preview.origin, plan.origin) and preview.target.id:lower() == plan.target.id:lower()
         and preview.target.path == plan.target.path and preview.location.language == plan.location.language

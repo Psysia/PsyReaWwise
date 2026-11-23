@@ -76,6 +76,7 @@ function project.selection(current, mode)
                 local last = api.GetRegionOrMarkerInfo_Value(current, region, "D_ENDPOS")
                 entries[#entries + 1] = {
                     handle = region, id = id, binding = unpack_binding(value or ""), name = name,
+                    number = api.GetRegionOrMarkerInfo_Value(current, region, "I_NUMBER"),
                     first = first, last = last, can_render = last > first,
                 }
             end
@@ -92,6 +93,34 @@ function project.bind(current, mode, entry, origin, source)
         assert(api.SetProjExtState(current, region_section, entry.id, value) > 0, t("无法保存区间的 Wwise 绑定。"))
     end
     api.MarkProjectDirty(current)
+end
+
+function project.rename_regions(current, entries, count)
+    local changes = {}
+    for index = 1, count do
+        local entry = entries[index]
+        local previous, name = entry.selection, files.name(entry.source.wav):sub(1, -5)
+        if previous.name ~= name then
+            local region = api.GetRegionOrMarker(current, -1, previous.id)
+            assert(region and api.GetRegionOrMarkerInfo_Value(current, region, "B_ISREGION") == 1,
+                t("找不到需要改名的 REAPER 区间\n") .. previous.name)
+            local _, actual = api.GetSetRegionOrMarkerInfo_String(current, region, "P_NAME", "", false)
+            assert(actual == previous.name, t("REAPER 区间名称已变化\n") .. previous.name)
+            changes[#changes + 1] = {region = region, name = name}
+        end
+    end
+    if #changes == 0 then return end
+
+    api.Undo_BeginBlock2(current)
+    local ok, problem = pcall(function()
+        for _, change in ipairs(changes) do
+            assert(api.GetSetRegionOrMarkerInfo_String(current, change.region, "P_NAME", change.name, true),
+                t("无法更新 REAPER 区间名\n") .. change.name)
+        end
+    end)
+    api.Undo_EndBlock2(current, t("PsyReaWwise · 同步 Wwise 文件名到 REAPER 区间"), -1)
+    api.UpdateArrange()
+    if not ok then error(problem, 0) end
 end
 
 function project.import_sources(current, origin, sources, make_regions)
