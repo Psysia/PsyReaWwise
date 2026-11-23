@@ -32,7 +32,7 @@ local label_keys = {
     samplesDefault = "使用默认 Samples",
     samplesHint = "保存 REAPER 工程后将使用 .rpp 同级的 Samples，也可以选择已有导出目录。",
     itemUpdateHint = "选中已绑定 Wwise 音源的素材。更新时逐个渲染。",
-    regionUpdateHint = "在 REAPER 标尺上选中已绑定的区间。更新时按区间渲染主混音。",
+    regionUpdateHint = "在 REAPER 标尺上选中已绑定的区间。预览会读取区间渲染矩阵。",
     previewUpdate = "预览更新",
     updateCount = "渲染并覆盖 %d 个 WAV",
     updateNote = "更新前将备份原 WAV。共享同一 Originals 文件的音源会使用更新后的文件。",
@@ -55,6 +55,28 @@ local label_keys = {
     renameTo = "区间将改名为 %s",
     unnamedRegion = "未命名区间",
     newSoundLocation = "新增音源的导入位置",
+    renderSetup = "渲染设置",
+    renderPreset = "REAPER 预设",
+    defaultPreset = "PRW 默认设置",
+    refreshPresets = "刷新预设",
+    noPresets = "在 REAPER 的 Render 面板将预设保存为「所有设置」。",
+    wavPresetOnly = "需要一个 WAV 输出",
+    renderSource = "源",
+    renderBounds = "范围",
+    regionMatrix = "区间渲染矩阵",
+    projectRender = "REAPER 当前渲染设置",
+    connectedRegions = "已配对区间",
+    renderOutput = "输出",
+    renderSampleRate = "采样率",
+    renderChannels = "声道",
+    renderNormalize = "标准化",
+    renderLimiter = "限制器",
+    renderTail = "尾音",
+    renderFade = "淡入 / 淡出",
+    retainOriginal = "按目标 WAV",
+    projectRate = "工程采样率",
+    off = "关闭",
+    mainMix = "主混音",
     updateSource = "更新音源",
     newSound = "新建 Sound",
     shared = " · 共享",
@@ -69,7 +91,7 @@ local label_keys = {
     requestFailed = "无法将操作送到 REAPER。请重新打开工作台。",
 }
 
-function webview.new(t, files, project, wwise, samples, workflow, language)
+function webview.new(t, files, project, wwise, samples, workflow, language, presets)
     local labels = {}
     for key, text in pairs(label_keys) do labels[key] = t(text) end
     local port = tonumber(api.GetExtState(section, "port"))
@@ -130,19 +152,27 @@ function webview.new(t, files, project, wwise, samples, workflow, language)
         for index, entry in ipairs(plan.entries) do
             local references = {}
             for _, use in ipairs(entry.usage) do references[#references + 1] = use.path end
+            local info = plan.preset and plan.preset.view or entry.info
+            local format
+            if info then
+                local rate = info.rate == 0 and labels.projectRate or ("%g kHz"):format(info.rate / 1000)
+                local channels = info.channels == 1 and labels.mono
+                    or info.channels == 2 and labels.stereo or tostring(info.channels)
+                format = rate .. " · " .. channels
+            end
             rows[index] = {
                 name = entry.selection and entry.selection.name or files.name(entry.replacement),
                 targetId = plan.region_draft and entry.source.id,
                 originals = entry.source.relative, originalsPath = entry.source.wav,
                 references = references, existing = entry.existing == true,
-                format = entry.info and ("%g kHz · %s"):format(entry.info.rate / 1000,
-                    entry.info.channels == 1 and labels.mono or labels.stereo),
+                format = format,
                 sample = entry.sample and entry.sample.path,
                 replace = entry.sample and entry.sample.exists == true,
             }
         end
         return {
             id = state.revision, rows = rows, project = plan.origin.name,
+            matrix = plan.mode == "regions" and plan.entries[1].selection.render_track ~= nil,
             syncSamples = plan.sample_directory ~= nil,
             target = plan.target and plan.target.path,
             folder = plan.location and workflow.originals_directory(plan.location),
@@ -170,16 +200,25 @@ function webview.new(t, files, project, wwise, samples, workflow, language)
     local function map_regions(params, links)
         local saved = state.transfer
         saved.id, saved.plan = nil, nil
-        local plan = workflow.preview_region_transfer(saved.draft, links, sample_destination(params))
+        local plan = workflow.preview_region_transfer(saved.draft, links, sample_destination(params),
+            presets.resolve(params.renderPreset))
         if #plan.entries > 0 then return store_preview("transfer", plan) end
     end
 
     handlers["session"] = function()
         state.pull, state.update, state.transfer = nil, nil, nil
-        return {labels = labels, language = language, project = project_view()}
+        local ok, list = pcall(presets.read)
+        return {labels = labels, language = language, project = project_view(),
+            renderPresets = ok and list or {}, presetError = not ok and tostring(list) or nil}
     end
 
     handlers["project.read"] = project_view
+
+    handlers["render.presets"] = function(params)
+        require_current(params)
+        local list = presets.read()
+        return {renderPresets = list}
+    end
 
     handlers["port.set"] = function(params)
         local value = params.port
@@ -237,7 +276,8 @@ function webview.new(t, files, project, wwise, samples, workflow, language)
     handlers["update.preview"] = function(params)
         local current = require_current(params)
         state.update = nil
-        return store_preview("update", workflow.preview(current, state.port, mode(params), sample_destination(params)))
+        return store_preview("update", workflow.preview(current, state.port, mode(params), sample_destination(params),
+            presets.resolve(params.renderPreset)))
     end
 
     handlers["update.publish"] = function(params)
@@ -254,7 +294,9 @@ function webview.new(t, files, project, wwise, samples, workflow, language)
             state.transfer = {key = key, draft = draft}
             local regions, targets = {}, {}
             for index, region in ipairs(draft.regions) do
-                regions[index] = {id = region.id, name = region.name, number = region.number, renderable = region.can_render}
+                regions[index] = {id = region.id, name = region.name, number = region.number,
+                    renderable = region.can_render and not region.render_error, renderLabel = region.render_label,
+                    renderError = region.render_error, matrix = region.render_track ~= nil or region.render_error ~= nil}
             end
             for index, target in ipairs(draft.targets) do
                 targets[index] = {id = target.source.id, name = target.name, originals = target.source.relative,
@@ -267,7 +309,8 @@ function webview.new(t, files, project, wwise, samples, workflow, language)
         end
         assert(params.placement == "same" or params.placement == "parent", t("无效的 Wwise 传输层级。"))
         return store_preview("transfer",
-            workflow.preview_transfer(current, state.port, params.placement, sample_destination(params)))
+            workflow.preview_transfer(current, state.port, params.placement, sample_destination(params),
+                presets.resolve(params.renderPreset)))
     end
 
     handlers["transfer.map"] = function(params)

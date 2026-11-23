@@ -1,7 +1,7 @@
 -- @description PsyReaWwise WebView · Wwise 音频往返工作台
 -- @author Psysia
--- @version 0.2.0-beta1
--- @link https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta1
+-- @version 0.2.0-beta2
+-- @link https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta2
 
 local api = reaper
 local title = "PsyReaWwise WebView"

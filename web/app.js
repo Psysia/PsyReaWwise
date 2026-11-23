@@ -8,6 +8,8 @@ const state = {
   placement: "same",
   makeRegions: true,
   syncSamples: true,
+  renderPreset: "",
+  renderPresets: [],
   checked: new Set(),
   status: "",
 };
@@ -80,9 +82,11 @@ async function run(method, params, progress, apply) {
     if (apply) apply(result);
     state.error = result?.error === true;
     state.status = result?.message || "";
+    return true;
   } catch (error) {
     state.error = true;
     state.status = error.message || state.labels.requestFailed;
+    return false;
   } finally {
     state.busy = false;
     render();
@@ -160,6 +164,78 @@ function samplesControls() {
       ? button("samples-default", l.samplesDefault, () => run("samples.reset", {}, l.choosing))
       : undefined,
   );
+}
+
+function renderSetup(mode, graph, plan) {
+  const l = state.labels;
+  const preset = state.renderPresets.find((item) => item.name === state.renderPreset);
+  const choose = node("select", "render-preset", new Option(l.defaultPreset, ""));
+  choose.dataset.focus = "render-preset";
+  choose.disabled = state.busy;
+  for (const entry of state.renderPresets) {
+    const option = new Option(entry.valid ? entry.name : entry.name + " · " + l.wavPresetOnly, entry.name);
+    option.disabled = !entry.valid;
+    choose.append(option);
+  }
+  choose.value = preset?.name || "";
+  choose.addEventListener("change", () => {
+    state.renderPreset = choose.value;
+    state.update = undefined;
+    if (graph) remapRegions(graph);
+    else {
+      state.transfer = undefined;
+      render();
+    }
+  });
+  const reload = button("refresh-render-presets", l.refreshPresets, async () => {
+    const refreshed = await run("render.presets", {}, "", (result) => {
+      state.renderPresets = result.renderPresets;
+      state.presetError = undefined;
+      if (!state.renderPresets.some((entry) => entry.name === state.renderPreset && entry.valid)) state.renderPreset = "";
+      state.update = undefined;
+      if (!graph) state.transfer = undefined;
+    });
+    if (refreshed && state.transfer === graph && graph) remapRegions(graph);
+  });
+  const section = node("details", "render-setup");
+  section.open = state.renderExpanded === true;
+  section.addEventListener("toggle", () => { if (section.isConnected) state.renderExpanded = section.open; });
+  const field = (label, value) => node("div", "render-field", node("dt", "", label), node("dd", "", value));
+  const scope = graph || mode === "regions";
+  const source = graph ? (graph.regions.some((region) => region.matrix) ? l.regionMatrix : l.mainMix)
+    : mode === "regions" && plan ? (plan.matrix ? l.regionMatrix : l.mainMix)
+      : mode === "items" ? l.items : l.projectRender;
+  const channelCount = preset?.channels;
+  const defaultFormat = graph || mode ? l.retainOriginal : l.projectRender;
+  const defaultProcessing = !preset && !graph && !mode ? l.projectRender : l.off;
+  const channelText = channelCount === 1 ? l.mono : channelCount === 2 ? l.stereo : channelCount ? String(channelCount) : defaultFormat;
+  const normalization = preset?.normalization
+    ? preset.normalization + (typeof preset.target === "number" ? " · " + preset.target + (preset.normalization.startsWith("LUFS") ? " LUFS" : " dB") : "")
+    : defaultProcessing;
+  const fade = preset?.fadeIn || preset?.fadeOut
+    ? [preset.fadeIn || 0, preset.fadeOut || 0].map((seconds) => Math.round(seconds * 1000) + " ms").join(" / ")
+    : defaultProcessing;
+  section.append(node("summary", "", node("strong", "", l.renderSetup), node("span", "muted", preset?.name || l.defaultPreset)),
+    node("div", "render-body",
+      node("div", "render-preset-line", node("label", "", l.renderPreset, choose), reload),
+      state.presetError && node("p", "render-message", state.presetError),
+      !state.renderPresets.length && node("p", "render-message muted", l.noPresets),
+      node("dl", "render-fields",
+        field(l.renderSource, source),
+        field(l.renderBounds, scope ? (graph ? l.connectedRegions + " · " + Object.keys(graph.links).length : l.selectedRegions)
+          : mode === "items" ? l.items : l.projectRender),
+        field(l.renderOutput, state.syncSamples ? "Wwise Originals + Samples" : "Wwise Originals"),
+        field(l.renderFormat, "WAV · " + (preset?.bits || 24) + " bit"),
+        field(l.renderSampleRate, preset ? preset.rate ? preset.rate + " Hz" : l.projectRate : defaultFormat),
+        field(l.renderChannels, channelText),
+        field(l.renderNormalize, normalization),
+        field(l.renderLimiter, typeof preset?.limiter === "number" ? preset.limiter + " dB" : defaultProcessing),
+        field(l.renderTail, preset?.tail ? preset.tail + " ms" : defaultProcessing),
+        field(l.renderFade, fade),
+      ),
+    ),
+  );
+  return section;
 }
 
 function pullActions() {
@@ -262,7 +338,7 @@ function updateActions() {
   const commands = node("div", "toolbar", modes,
     button("preview-update", l.previewUpdate, () => {
       state.update = undefined;
-      run("update.preview", { mode: state.mode, syncSamples: state.syncSamples }, l.checking, (result) => {
+      run("update.preview", { mode: state.mode, syncSamples: state.syncSamples, renderPreset: state.renderPreset }, l.checking, (result) => {
         state.update = result;
       });
     }, isReady),
@@ -273,12 +349,14 @@ function updateActions() {
   );
   const hint = !state.project.waapi ? l.needWaapi
     : plan ? l.updateNote : state.mode === "items" ? l.itemUpdateHint : l.regionUpdateHint;
-  return [samplesControls(), commands, node("p", "hint", hint), plan && previewTable(plan, "update")];
+  return [samplesControls(), renderSetup(state.mode, undefined, plan), commands, node("p", "hint", hint), plan && previewTable(plan, "update")];
 }
 
 function remapRegions(graph) {
   graph.plan = undefined;
-  run("transfer.map", { draft: graph.draft, links: graph.links, syncSamples: state.syncSamples }, "", (result) => {
+  run("transfer.map", {
+    draft: graph.draft, links: graph.links, syncSamples: state.syncSamples, renderPreset: state.renderPreset,
+  }, "", (result) => {
     if (state.transfer === graph) graph.plan = result.plan;
   });
 }
@@ -303,14 +381,16 @@ function regionGraph(graph) {
       render();
     }, region.renderable);
     control.className = "pair-node";
-    control.title = rename ? name + "\n" + rename : name;
+    control.title = [name, region.renderLabel, region.renderError, rename].filter(Boolean).join("\n");
     control.dataset.linked = String(Boolean(linked));
     control.setAttribute("aria-pressed", String(graph.activeRegion === region.id));
     const port = node("span", "pair-port");
     port.setAttribute("aria-hidden", "true");
     regionPorts.set(region.id, port);
+    const track = region.renderError || region.renderLabel;
     control.append(node("span", "pair-title", name),
-      node("span", "pair-detail", "R" + region.number + (rename ? " · " + rename : "")), port);
+      node("span", "pair-detail", ["R" + region.number, track, rename].filter(Boolean).join(" · ")), port);
+    if (region.renderError) control.classList.add("render-unavailable");
     regions.append(control);
   }
 
@@ -382,7 +462,9 @@ function transferActions() {
   const commands = node("div", "toolbar", levels,
     button("preview-transfer", l.previewTransfer, () => {
       state.transfer = undefined;
-      run("transfer.preview", { placement: state.placement, syncSamples: state.syncSamples }, l.previewing, (result) => {
+      run("transfer.preview", {
+        placement: state.placement, syncSamples: state.syncSamples, renderPreset: state.renderPreset,
+      }, l.previewing, (result) => {
         if (result.kind === "regions") result.links = { ...result.links };
         state.transfer = result;
       });
@@ -392,15 +474,16 @@ function transferActions() {
       run("transfer.publish", { preview: plan.id }, l.transferring, () => { state.update = undefined; });
     }, isReady && Boolean(plan), true)),
   );
-  if (graph) return [samplesControls(), commands,
+  const settings = renderSetup(undefined, graph);
+  if (graph) return [samplesControls(), settings, commands,
     node("div", "pair-summary", node("strong", "", format(l.pairCount, count, graph.regions.length)),
       node("span", "muted", l.pairHint)),
     regionGraph(graph)];
-  if (!plan) return [samplesControls(), commands,
+  if (!plan) return [samplesControls(), settings, commands,
     node("p", "hint", state.project.waapi ? l.transferHint : l.needWaapi)];
   const destination = node("div", "destination", node("strong", "", "Wwise"), plan.target,
     node("span", "muted", "Originals / " + plan.folder));
-  return [samplesControls(), commands, destination, previewTable(plan, "transfer")];
+  return [samplesControls(), settings, commands, destination, previewTable(plan, "transfer")];
 }
 
 function render() {
@@ -455,6 +538,8 @@ async function start() {
   await native.events.on("message", receive);
   const session = await request("session");
   state.labels = session.labels;
+  state.renderPresets = session.renderPresets || [];
+  state.presetError = session.presetError;
   applyProject(session.project);
   document.documentElement.lang = session.language === "zh" ? "zh-CN" : "en";
   render();

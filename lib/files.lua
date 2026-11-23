@@ -17,6 +17,22 @@ local function base64(bytes)
     return table.concat(out)
 end
 
+function files.decode_base64(encoded)
+    local output, value, bits = {}, 0, 0
+    for character in encoded:gsub("%s", ""):gsub("=+$", ""):gmatch(".") do
+        local digit = alphabet:find(character, 1, true)
+        if not digit then return end
+        value, bits = value * 64 + digit - 1, bits + 6
+        if bits >= 8 then
+            bits = bits - 8
+            local remainder = 2 ^ bits
+            output[#output + 1] = string.char(math.floor(value / remainder))
+            value = value % remainder
+        end
+    end
+    return table.concat(output)
+end
+
 local function windows_file_operation(command, first, second)
     local function literal(path)
         return "'" .. path:gsub("'", "''") .. "'"
@@ -44,6 +60,20 @@ end
 
 local function needs_unicode_io(first, second)
     return first:find("[\128-\255]") or second:find("[\128-\255]")
+end
+
+function files.read_text(path)
+    if needs_unicode_io(path, path) then
+        local ok, output = windows_file_operation("[Convert]::ToBase64String([IO.File]::ReadAllBytes($a))", path, path)
+        local encoded = ok and output:match("^0[\r\n]+([%w+/=]*)")
+        if encoded then return files.decode_base64(encoded) end
+        return nil, output
+    end
+    local stream, reason = io.open(path, "rb")
+    if not stream then return nil, reason end
+    local content = stream:read("*a")
+    stream:close()
+    return content
 end
 
 function files.join(base, name)

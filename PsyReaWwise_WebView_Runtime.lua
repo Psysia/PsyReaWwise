@@ -1,5 +1,5 @@
 -- @description PsyReaWwise WebView Lua backend · Lua 后端
--- @version 0.2.0-beta1
+-- @version 0.2.0-beta2
 
 local api = reaper
 local root = debug.getinfo(1, "S").source:sub(2):match("^(.*)[\\/]+") or "."
@@ -35,7 +35,8 @@ local project = module("project", files, t)
 local samples = module("samples", files, t)
 local workflow = module("workflow", files, project, wwise, samples, t)
 local json = module("json")
-local backend = module("webview").new(t, files, project, wwise, samples, workflow, language)
+local presets = module("presets", files, t)
+local backend = module("webview").new(t, files, project, wwise, samples, workflow, language, presets)
 
 local key = (root .. "/PsyReaWwise_WebView_Runtime.lua"):gsub("\\", "/"):lower()
 local previous = tonumber(api.GetExtState(section, key))

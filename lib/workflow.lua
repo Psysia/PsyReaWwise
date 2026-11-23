@@ -99,6 +99,7 @@ local function selection_ids(entries, origin)
     for index, entry in ipairs(entries) do
         local bound = entry.binding
         assert(entry.can_render, t("选中内容无法渲染\n") .. entry.name)
+        assert(not entry.render_error, (entry.render_error or "") .. "\n" .. entry.name)
         assert(bound, t("选中内容尚未绑定 Wwise 音源\n") .. entry.name)
         assert(same_origin(origin, {id = bound.project_id, path = bound.project_path}),
             t("选中内容绑定的是另一个 Wwise 工程\n") .. entry.name)
@@ -110,7 +111,7 @@ local function selection_ids(entries, origin)
     return ids
 end
 
-local function make_plan(current, port, mode, sample_directory)
+local function make_plan(current, port, mode, sample_directory, preset)
     local selection = project.selection(current, mode)
     assert(#selection > 0, mode == "items" and t("请先在 REAPER 中选中素材。") or t("请先在 REAPER 中选中区间。"))
     return wwise.session(port, function()
@@ -127,7 +128,7 @@ local function make_plan(current, port, mode, sample_directory)
         end
         samples.plan(entries, sample_directory)
         return {current = current, port = port, mode = mode, origin = origin, entries = entries,
-            sample_directory = sample_directory}
+            sample_directory = sample_directory, preset = preset}
     end)
 end
 
@@ -147,6 +148,8 @@ local function check_preview(before, current)
     for _, entry in ipairs(current.entries) do
         local previous = by_id[entry.selection.id]
         assert(previous, t("REAPER 选择发生变化，请重新预览。"))
+        assert(previous.selection.render_track == entry.selection.render_track,
+            t("REAPER 区间渲染矩阵已变化，请重新预览。"))
         assert(same_target(previous.source, entry.source) and previous.usage_key == entry.usage_key
             and previous.info.rate == entry.info.rate and previous.info.channels == entry.info.channels,
             t("Wwise 音源或文件引用发生变化，请重新预览。"))
@@ -179,7 +182,7 @@ local function publish_existing(plan)
             samples.backup(entry, directory, index)
         end
 
-        project.render(plan.current, plan.mode, plan.entries)
+        project.render(plan.current, plan.mode, plan.entries, plan.preset)
         assert(reaper.EnumProjects(-1, "") == plan.current, t("REAPER 已切换工程，请重新预览。"))
 
         wwise.session(plan.port, function()
@@ -238,7 +241,7 @@ end
 function workflow.update(preview)
     assert(reaper.EnumProjects(-1, "") == preview.current, t("REAPER 已切换工程，请重新预览。"))
     verify_sample_directory(preview)
-    local plan = make_plan(preview.current, preview.port, preview.mode, preview.sample_directory)
+    local plan = make_plan(preview.current, preview.port, preview.mode, preview.sample_directory, preview.preset)
     check_preview(preview, plan)
     return publish_existing(plan)
 end
@@ -304,7 +307,9 @@ function workflow.match_regions(draft)
     local regions, wavs, links = {}, {}, {}
     for _, region in ipairs(draft.regions) do
         local key = wav_stem(region.name)
-        if region.can_render and key ~= "" then regions[key] = regions[key] == nil and region.id end
+        if region.can_render and not region.render_error and key ~= "" then
+            regions[key] = regions[key] == nil and region.id
+        end
     end
     for _, target in ipairs(draft.targets) do
         local key = wav_stem(target.name)
@@ -316,7 +321,7 @@ function workflow.match_regions(draft)
     return links
 end
 
-function workflow.preview_region_transfer(draft, links, sample_directory)
+function workflow.preview_region_transfer(draft, links, sample_directory, preset)
     local invalid = t("区间和 Wwise WAV 必须一对一连接。请检查连线。")
     assert(type(links) == "table", invalid)
     local entries, seen, validated = {}, {}, {}
@@ -326,6 +331,7 @@ function workflow.preview_region_transfer(draft, links, sample_directory)
             local target = draft.by_id[id]
             assert(target and not seen[id], invalid)
             assert(region.can_render, t("选中内容无法渲染\n") .. region.name)
+            assert(not region.render_error, (region.render_error or "") .. "\n" .. region.name)
             entries[#entries + 1] = existing_entry(region, target.source, target.usage, target.usage_key)
             validated[region.id], seen[id] = id, true
         end
@@ -333,7 +339,7 @@ function workflow.preview_region_transfer(draft, links, sample_directory)
     for region in pairs(links) do assert(validated[region], invalid) end
     samples.plan(entries, sample_directory)
     return {current = draft.current, port = draft.port, mode = "regions", origin = draft.origin, entries = entries,
-        sample_directory = sample_directory, region_draft = draft, links = validated}
+        sample_directory = sample_directory, region_draft = draft, links = validated, preset = preset}
 end
 
 local function refresh_region_plan(preview)
@@ -346,6 +352,8 @@ local function refresh_region_plan(preview)
         local previous = original[region.id]
         assert(previous and region.name == previous.name and region.first == previous.first and region.last == previous.last,
             t("REAPER 区间选择、名称或范围已变化，请重新预览。"))
+        assert(region.render_track == previous.render_track and region.render_error == previous.render_error,
+            t("REAPER 区间渲染矩阵已变化，请重新预览。"))
     end
 
     local refreshed = read_region_transfer(preview.current, preview.port, actual, before.origin)
@@ -354,7 +362,7 @@ local function refresh_region_plan(preview)
         assert(refreshed.by_id[target.source.id], t("Wwise 选中的 WAV 已变化，请重新预览。"))
     end
 
-    local plan = workflow.preview_region_transfer(refreshed, preview.links, preview.sample_directory)
+    local plan = workflow.preview_region_transfer(refreshed, preview.links, preview.sample_directory, preview.preset)
     check_preview(preview, plan)
     return plan
 end
@@ -447,20 +455,20 @@ local function transfer_entries(origin, target, location, paths, sample_director
     return entries
 end
 
-local function make_transfer_plan(current, port, mode, sample_directory, directory)
+local function make_transfer_plan(current, port, mode, sample_directory, directory, preset)
     local stage = files.join(directory, "Render")
-    local paths = project.transfer_render(current, stage)
+    local paths = project.transfer_render(current, stage, nil, preset)
     return wwise.session(port, function()
         local origin = wwise.project()
         local target, location = transfer_destination(mode)
         return {current = current, port = port, mode = mode, sample_directory = sample_directory,
-            directory = directory, stage = stage, paths = paths, origin = origin, target = target, location = location,
+            directory = directory, stage = stage, paths = paths, origin = origin, target = target, location = location, preset = preset,
             entries = transfer_entries(origin, target, location, paths, sample_directory)}
     end)
 end
 
-function workflow.preview_transfer(current, port, mode, sample_directory)
-    return make_transfer_plan(current, port, mode, sample_directory, project.directory(current, "Transfers"))
+function workflow.preview_transfer(current, port, mode, sample_directory, preset)
+    return make_transfer_plan(current, port, mode, sample_directory, project.directory(current, "Transfers"), preset)
 end
 
 local function check_transfer_entries(before, after)
@@ -491,7 +499,7 @@ function workflow.transfer(preview)
         return publish_existing(refresh_region_plan(preview))
     end
     assert(#project.selection(preview.current, "regions") == 0, t("REAPER 选择发生变化，请重新预览。"))
-    local plan = make_transfer_plan(preview.current, preview.port, preview.mode, preview.sample_directory, preview.directory)
+    local plan = make_transfer_plan(preview.current, preview.port, preview.mode, preview.sample_directory, preview.directory, preview.preset)
     assert(same_origin(preview.origin, plan.origin) and preview.target.id:lower() == plan.target.id:lower()
         and preview.target.path == plan.target.path and preview.location.language == plan.location.language
         and files.key(workflow.originals_directory(preview.location)) == files.key(workflow.originals_directory(plan.location)),
@@ -510,7 +518,7 @@ function workflow.transfer(preview)
             samples.backup(entry, plan.directory, index)
         end
 
-        project.transfer_render(plan.current, plan.stage, plan.paths)
+        project.transfer_render(plan.current, plan.stage, plan.paths, plan.preset)
 
         wwise.session(plan.port, function()
             local origin = verify_origin(plan.origin)
