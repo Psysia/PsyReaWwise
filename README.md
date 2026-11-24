@@ -10,7 +10,7 @@
 
 Edit Wwise audio in REAPER, then replace the selected Originals with renders from the matching regions. Review the routing, choose a REAPER render preset, and optionally sync the same WAVs to the REAPER project's `Samples` folder.
 
-[0.2.0 Beta 2 release notes](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta2) · [Windows x64 ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/PsyReaWwise-WebView-0.2.0-beta2-win64.zip) · [PsyReaSFX (PRS)](https://github.com/Psysia/PsyReaSFX)
+[0.2.0 Beta 3 release notes](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta3) · [Windows x64 ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta3/PsyReaWwise-WebView-0.2.0-beta3-win64.zip) · [PsyReaSFX (PRS)](https://github.com/Psysia/PsyReaSFX)
 
 ## Install
 
@@ -26,6 +26,10 @@ Edit Wwise audio in REAPER, then replace the selected Originals with renders fro
 3. Run `PsyReaWwise_WebView.lua` from the Action List. A compatible loaded ReaWebAPI is reused. On a fresh setup, the action prepares the bundled runtime and prompts you to restart REAPER once.
 
 For an offline install, extract the entire ZIP and load `PsyReaWwise_WebView.lua` through **Action List → New action → Load ReaScript**. The legacy 0.1.0 edition remains available as a separate package. [0.1.0 release](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.1.0)
+
+### Float and minimize the panel
+
+Use the title bar to minimize the floating WebView. With js_ReaScriptAPI loaded, the window has a taskbar entry like PRS. Click its taskbar entry or run the same action to restore it. When docked, the panel follows REAPER's docker. [Window behavior helper](lib/window.lua)
 
 ## Replace Wwise WAVs
 
@@ -60,4 +64,4 @@ PsyReaWwise uses the PRS dark palette and the language selected in PRS. The Wind
 
 The package ships ReaWebAPI 0.3.9.30-prs.3 under LGPL-3.0-or-later and includes the corresponding source and license notices. [Runtime lock](runtime/reawebapi/runtime-lock.json) · [ReaWebAPI](https://github.com/Psysia/ReaWebAPI)
 
-The bilingual panel passed headless Chromium tests and the Wwise transfer workflow passed WwiseConsole tests. Isolated REAPER 7.86 tests verified distinct outputs for three overlapping regions, preset format, and peak normalization. Native docking acceptance is pending.
+The bilingual panel passed headless Chromium tests and the Wwise transfer workflow passed WwiseConsole tests. Isolated REAPER 7.86 tests verified matrix routing, preset format, peak normalization, and restoring the same floating WebView after minimizing. Native docking acceptance is pending.

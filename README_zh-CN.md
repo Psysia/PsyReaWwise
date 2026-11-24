@@ -10,7 +10,7 @@
 
 在 REAPER 编辑 Wwise 音频，再把对应区间的渲染结果批量回写到 Wwise Originals。可以预览配对和矩阵取轨，选择 REAPER 渲染预设，并把同一份 WAV 同步到 REAPER 工程的 `Samples`。
 
-[0.2.0 Beta 2 发布说明](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta2) · [Windows x64 离线包](https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/PsyReaWwise-WebView-0.2.0-beta2-win64.zip) · [PsyReaSFX（PRS）](https://github.com/Psysia/PsyReaSFX)
+[0.2.0 Beta 3 发布说明](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta3) · [Windows x64 离线包](https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta3/PsyReaWwise-WebView-0.2.0-beta3-win64.zip) · [PsyReaSFX（PRS）](https://github.com/Psysia/PsyReaSFX)
 
 ## 安装
 
@@ -26,6 +26,10 @@
 3. 从 Action List 运行 `PsyReaWwise_WebView.lua`。已加载兼容的 ReaWebAPI 时直接复用。首次安装时，动作会准备运行时并提示重启一次 REAPER。
 
 离线安装时，解压完整 ZIP，在 **Action List → New action → Load ReaScript** 中加载 `PsyReaWwise_WebView.lua`。0.1.0 仍可作为独立包安装。 [0.1.0 发布页](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.1.0)
+
+### 浮窗与最小化
+
+浮窗可用标题栏最小化。加载 js_ReaScriptAPI 时，浮窗会像 PRS 一样有自己的任务栏入口。点击任务栏入口或再次运行同一个动作可恢复窗口。停靠时沿用 REAPER 的停靠行为。 [窗口逻辑模块](lib/window.lua)
 
 ## 批量替换 Wwise WAV
 
@@ -60,4 +64,4 @@ PsyReaWwise 使用 PRS 黑色配色，并读取 PRS 保存的界面语言。没�
 
 随包提供的 ReaWebAPI 0.3.9.30-prs.3 采用 LGPL-3.0-or-later，包含匹配源码和许可证声明。 [运行时锁定清单](runtime/reawebapi/runtime-lock.json) · [ReaWebAPI](https://github.com/Psysia/ReaWebAPI)
 
-双语面板通过了无界面 Chromium 测试，Wwise 回写经 WwiseConsole 验证。隔离 REAPER 7.86 测试验证了三个重叠区间的逐轨输出、预设格式和峰值标准化。原生停靠待实机验收。
+双语面板通过了无界面 Chromium 测试，Wwise 回写经 WwiseConsole 验证。隔离 REAPER 7.86 测试验证了矩阵取轨、预设格式、峰值标准化，以及浮窗最小化后恢复同一个窗口。原生停靠待实机验收。

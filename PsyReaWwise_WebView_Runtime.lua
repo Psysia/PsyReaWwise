@@ -1,5 +1,5 @@
 -- @description PsyReaWwise WebView Lua backend · Lua 后端
--- @version 0.2.0-beta2
+-- @version 0.2.0-beta3
 
 local api = reaper
 local root = debug.getinfo(1, "S").source:sub(2):match("^(.*)[\\/]+") or "."
@@ -37,6 +37,7 @@ local workflow = module("workflow", files, project, wwise, samples, t)
 local json = module("json")
 local presets = module("presets", files, t)
 local backend = module("webview").new(t, files, project, wwise, samples, workflow, language, presets)
+local update_taskbar = module("window", api, title)
 
 local key = (root .. "/PsyReaWwise_WebView_Runtime.lua"):gsub("\\", "/"):lower()
 local previous = tonumber(api.GetExtState(section, key))
@@ -86,14 +87,16 @@ local pending, polling_at, connected = nil, 0, false
 local function loop()
     if not api.ReaWeb_IsOpen(window) then return end
     if api.ReaWeb_IsReady(window) then
+        local now = api.time_precise()
+        if update_taskbar then pcall(update_taskbar, now) end
         if pending and api.ReaWeb_Send(window, pending) then pending = nil end
         if not pending then
             local raw = api.ReaWeb_Receive(window)
             if type(raw) == "string" and raw ~= "" then
                 connected = true
                 pending = handle(raw)
-            elseif connected and api.time_precise() >= polling_at then
-                polling_at = api.time_precise() + 0.25
+            elseif connected and now >= polling_at then
+                polling_at = now + 0.25
                 if backend.refresh() then
                     pending = json.encode({protocol = 1, event = "project", data = backend.project()})
                 end
