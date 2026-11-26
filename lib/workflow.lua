@@ -143,11 +143,12 @@ end
 local function check_preview(before, current)
     assert(same_origin(before.origin, current.origin), t("Wwise 已切换工程，请重新预览。"))
     assert(#before.entries == #current.entries, t("REAPER 选择发生变化，请重新预览。"))
+    local key = before.region_draft and "source" or "selection"
     local by_id = {}
-    for _, entry in ipairs(before.entries) do by_id[entry.selection.id] = entry end
+    for _, entry in ipairs(before.entries) do by_id[entry[key].id] = entry end
     for _, entry in ipairs(current.entries) do
-        local previous = by_id[entry.selection.id]
-        assert(previous, t("REAPER 选择发生变化，请重新预览。"))
+        local previous = by_id[entry[key].id]
+        assert(previous and previous.selection.id == entry.selection.id, t("REAPER 选择发生变化，请重新预览。"))
         assert(previous.selection.render_track == entry.selection.render_track,
             t("REAPER 区间渲染矩阵已变化，请重新预览。"))
         assert(same_target(previous.source, entry.source) and previous.usage_key == entry.usage_key
@@ -161,6 +162,27 @@ local function verify_sample_directory(preview)
     if not preview.sample_directory then return end
     local current = samples.directory(preview.current)
     assert(current and files.key(current) == files.key(preview.sample_directory), t("Samples 目录已变化，请重新预览。"))
+end
+
+local function render_existing(plan)
+    if not plan.region_draft then
+        project.render(plan.current, plan.mode, plan.entries, plan.preset)
+        return
+    end
+
+    local renders, by_key, copies = {}, {}, {}
+    for _, entry in ipairs(plan.entries) do
+        local key = entry.selection.id
+        if not plan.preset then key = ("%s:%d:%d"):format(key, entry.info.rate, entry.info.channels) end
+        local render = by_key[key]
+        if render then
+            copies[#copies + 1] = {source = render.replacement, destination = entry.replacement}
+        else
+            renders[#renders + 1], by_key[key] = entry, entry
+        end
+    end
+    project.render(plan.current, plan.mode, renders, plan.preset)
+    for _, copy in ipairs(copies) do files.copy(copy.source, copy.destination) end
 end
 
 local function publish_existing(plan)
@@ -182,7 +204,7 @@ local function publish_existing(plan)
             samples.backup(entry, directory, index)
         end
 
-        project.render(plan.current, plan.mode, plan.entries, plan.preset)
+        render_existing(plan)
         assert(reaper.EnumProjects(-1, "") == plan.current, t("REAPER 已切换工程，请重新预览。"))
 
         wwise.session(plan.port, function()
@@ -316,27 +338,27 @@ function workflow.match_regions(draft)
         wavs[key] = wavs[key] == nil and target.source.id
     end
     for name, id in pairs(regions) do
-        if id and wavs[name] then links[id] = wavs[name] end
+        if id and wavs[name] then links[wavs[name]] = id end
     end
     return links
 end
 
 function workflow.preview_region_transfer(draft, links, sample_directory, preset)
-    local invalid = t("区间和 Wwise WAV 必须一对一连接。请检查连线。")
+    local invalid = t("每个 Wwise WAV 需要连接一个可用的 REAPER 区间。请检查连线。")
     assert(type(links) == "table", invalid)
-    local entries, seen, validated = {}, {}, {}
-    for _, region in ipairs(draft.regions) do
-        local id = links[region.id]
+    local entries, by_region, validated = {}, {}, {}
+    for _, region in ipairs(draft.regions) do by_region[region.id] = region end
+    for _, target in ipairs(draft.targets) do
+        local id = links[target.source.id]
         if id ~= nil then
-            local target = draft.by_id[id]
-            assert(target and not seen[id], invalid)
+            local region = assert(by_region[id], invalid)
             assert(region.can_render, t("选中内容无法渲染\n") .. region.name)
             assert(not region.render_error, (region.render_error or "") .. "\n" .. region.name)
             entries[#entries + 1] = existing_entry(region, target.source, target.usage, target.usage_key)
-            validated[region.id], seen[id] = id, true
+            validated[target.source.id] = id
         end
     end
-    for region in pairs(links) do assert(validated[region], invalid) end
+    for target in pairs(links) do assert(validated[target], invalid) end
     samples.plan(entries, sample_directory)
     return {current = draft.current, port = draft.port, mode = "regions", origin = draft.origin, entries = entries,
         sample_directory = sample_directory, region_draft = draft, links = validated, preset = preset}

@@ -10,7 +10,7 @@
 
 Edit Wwise audio in REAPER, then replace the selected Originals with renders from the matching regions. Review the routing, choose a REAPER render preset, and optionally sync the same WAVs to the REAPER project's `Samples` folder.
 
-[0.2.0 Beta 3 release notes](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta3) · [Windows x64 ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta3/PsyReaWwise-WebView-0.2.0-beta3-win64.zip) · [PsyReaSFX (PRS)](https://github.com/Psysia/PsyReaSFX)
+[0.2.0 Beta 4 release notes](https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta4) · [Windows x64 ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta4/PsyReaWwise-WebView-0.2.0-beta4-win64.zip) · [PsyReaSFX (PRS)](https://github.com/Psysia/PsyReaSFX)
 
 ## Install
 
@@ -34,15 +34,15 @@ Use the title bar to minimize the floating WebView. With js_ReaScriptAPI loaded,
 ## Replace Wwise WAVs
 
 1. **Select the audio.** Select regions in REAPER and their target WAVs in Wwise Media Pool, or select the corresponding Wwise sources or Sounds. For region render matrix projects, assign one output to each region you plan to pair. The matrix can point to a track or the master.
-2. **Preview the pairs.** Open **Transfer to Wwise → Preview transfer**. Unique matching names connect automatically, ignoring case and the `.wav` extension. Click a region and a WAV to connect them manually. The REAPER node shows its render track, and the Wwise node shows its Originals folder.
+2. **Preview the routes.** Open **Transfer to Wwise → Preview transfer**. Unique matching names connect automatically, ignoring case and the `.wav` extension. Drag from a region's socket to each WAV that should use its audio. You can also click the region and then the WAV. Connecting a new region to a WAV reroutes that target. Use **×** next to a WAV or select a cable and press **Delete** to disconnect it. **Disconnect all** clears the preview's routes.
 3. **Review render settings.** Open **Render settings** to use a preset saved as **All settings** in REAPER. Review the sample rate, channels, WAV depth, normalization, limiter, fades, and tail. The selected regions and matrix supply the source and bounds.
-4. **Render and replace.** PRW keeps the target Wwise filename and source GUID. After verification, the REAPER region takes the WAV's basename. Regions renamed in one batch can be undone together in REAPER.
+4. **Render and replace.** Each destination uses its existing Wwise WAV filename and source GUID. For a region with one destination, PRW syncs the region name to the target WAV's basename after verifying the replacement. A region with multiple destinations keeps its shared edit name. REAPER can undo all the region renames from one batch together.
 
 **Sync to Samples** is enabled by default. It writes the same WAV next to the current `.rpp` in `Samples`, or to an export folder you choose. The preview shows whether each Samples file will be added or replaced.
 
 ### Presets and output
 
-Choose a preset with one WAV output for Wwise replacement. A secondary format is rendered to staging. PRW defaults use the target WAV's sample rate and channel count for paired regions. If SWS is loaded, PRW can also apply preset render speed, resampling mode, and the internal project-rate option. PRW restores the render settings and region selection after the batch.
+Choose a preset with one WAV output for Wwise replacement. A secondary format is rendered to staging. With a preset, each connected region is rendered once. PRW defaults use the target WAV's sample rate and channel count, so destinations with the same format share one render per region. If SWS is loaded, PRW can also apply preset render speed, resampling mode, and the internal project-rate option. PRW restores the render settings and region selection after the batch.
 
 ## More workflows
 
@@ -64,4 +64,4 @@ PsyReaWwise uses the PRS dark palette and the language selected in PRS. The Wind
 
 The package ships ReaWebAPI 0.3.9.30-prs.3 under LGPL-3.0-or-later and includes the corresponding source and license notices. [Runtime lock](runtime/reawebapi/runtime-lock.json) · [ReaWebAPI](https://github.com/Psysia/ReaWebAPI)
 
-The bilingual panel passed headless Chromium tests and the Wwise transfer workflow passed WwiseConsole tests. Isolated REAPER 7.86 tests verified matrix routing, preset format, peak normalization, and restoring the same floating WebView after minimizing. Native docking acceptance is pending.
+The bilingual routing panel passed headless Chromium tests. An isolated REAPER 7.86 and WwiseConsole test verified one-to-many replacement, matrix track isolation, preset formats, peak normalization, and Samples copies. Separate native tests verified restoring a minimized floating panel. Native docking acceptance is pending.

@@ -1,5 +1,5 @@
 -- @description PsyReaWwise WebView Lua backend · Lua 后端
--- @version 0.2.0-beta3
+-- @version 0.2.0-beta4
 
 local api = reaper
 local root = debug.getinfo(1, "S").source:sub(2):match("^(.*)[\\/]+") or "."

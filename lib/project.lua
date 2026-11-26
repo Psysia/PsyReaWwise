@@ -115,11 +115,16 @@ function project.bind(current, mode, entry, origin, source)
 end
 
 function project.rename_regions(current, entries, count)
-    local changes = {}
+    local changes, target_counts = {}, {}
+    for _, entry in ipairs(entries) do
+        local id = entry.selection.id
+        target_counts[id] = (target_counts[id] or 0) + 1
+    end
+
     for index = 1, count do
         local entry = entries[index]
         local previous, name = entry.selection, files.name(entry.source.wav):sub(1, -5)
-        if previous.name ~= name then
+        if target_counts[previous.id] == 1 and previous.name ~= name then
             local region = api.GetRegionOrMarker(current, -1, previous.id)
             assert(region and api.GetRegionOrMarkerInfo_Value(current, region, "B_ISREGION") == 1,
                 t("找不到需要改名的 REAPER 区间\n") .. previous.name)

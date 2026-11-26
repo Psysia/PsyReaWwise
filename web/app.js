@@ -70,7 +70,7 @@ function applyProject(next) {
   state.project = next;
 }
 
-async function run(method, params, progress, apply) {
+async function run(method, params, progress, apply, focus = document.activeElement?.dataset?.focus) {
   if (state.busy) return;
   state.busy = true;
   state.error = false;
@@ -89,7 +89,7 @@ async function run(method, params, progress, apply) {
     return false;
   } finally {
     state.busy = false;
-    render();
+    render(focus);
   }
 }
 
@@ -154,11 +154,14 @@ function samplesControls() {
     state.transfer = undefined;
     render();
   });
-  const toggle = node("label", "toggle sync-toggle", check, l.syncSamples);
+  const switchTrack = node("span", "switch-track");
+  switchTrack.setAttribute("aria-hidden", "true");
+  const toggle = node("label", "toggle sync-toggle", check, switchTrack, l.syncSamples);
   if (!state.syncSamples) return node("div", "folder-control", toggle);
 
-  return node("div", "folder-control", toggle,
-    node("span", "folder-name muted", state.project.samples || l.samplesHint),
+  const folder = node("span", "folder-name muted", state.project.samples || l.samplesHint);
+  folder.title = folder.textContent;
+  return node("div", "folder-control", toggle, folder,
     button("samples-choose", l.samplesChoose, () => run("samples.choose", {}, l.choosing)),
     state.project.customSamples
       ? button("samples-default", l.samplesDefault, () => run("samples.reset", {}, l.choosing))
@@ -222,7 +225,7 @@ function renderSetup(mode, graph, plan) {
       !state.renderPresets.length && node("p", "render-message muted", l.noPresets),
       node("dl", "render-fields",
         field(l.renderSource, source),
-        field(l.renderBounds, scope ? (graph ? l.connectedRegions + " · " + Object.keys(graph.links).length : l.selectedRegions)
+        field(l.renderBounds, scope ? (graph ? l.connectedRegions + " · " + new Set(graph.links.values()).size : l.selectedRegions)
           : mode === "items" ? l.items : l.projectRender),
         field(l.renderOutput, state.syncSamples ? "Wwise Originals + Samples" : "Wwise Originals"),
         field(l.renderFormat, "WAV · " + (preset?.bits || 24) + " bit"),
@@ -352,143 +355,311 @@ function updateActions() {
   return [samplesControls(), renderSetup(state.mode, undefined, plan), commands, node("p", "hint", hint), plan && previewTable(plan, "update")];
 }
 
-function remapRegions(graph) {
+function remapRegions(graph, focus) {
   graph.plan = undefined;
   run("transfer.map", {
-    draft: graph.draft, links: graph.links, syncSamples: state.syncSamples, renderPreset: state.renderPreset,
+    draft: graph.draft, links: Object.fromEntries(graph.links),
+    syncSamples: state.syncSamples, renderPreset: state.renderPreset,
   }, "", (result) => {
     if (state.transfer === graph) graph.plan = result.plan;
-  });
+  }, focus);
+}
+
+function editRoute(graph, target, region) {
+  graph.activeRegion = undefined;
+  graph.selectedTarget = region ? target : undefined;
+  const focus = "wav-node-" + target;
+  if (graph.links.get(target) === region) {
+    render(focus);
+    return;
+  }
+  if (region) graph.links.set(target, region);
+  else graph.links.delete(target);
+  remapRegions(graph, focus);
 }
 
 function regionGraph(graph) {
   const l = state.labels;
-  const regions = node("div", "pair-column", node("h2", "pair-heading", l.regionNodes));
-  const wavs = node("div", "pair-column", node("h2", "pair-heading", l.wavNodes));
-  const regionPorts = new Map();
-  const wavPorts = new Map();
-  const wavById = new Map(graph.targets.map((target) => [target.id, target]));
-  const linkedRegions = new Map(Object.entries(graph.links).map(([region, wav]) => [wav, region]));
+  const regions = node("div", "pair-column");
+  const wavs = node("div", "pair-column");
+  const grid = node("div", "pair-grid", regions, wavs);
+  const viewport = node("div", "graph-wrapper", grid);
+  const regionNodes = new Map();
+  const wavNodes = new Map();
+  const targetsByRegion = new Map();
   const previewRows = new Map((graph.plan?.rows || []).map((row) => [row.targetId, row]));
+  const wires = new Map();
+  let drag, animation, ignoreClick;
 
-  for (const region of graph.regions) {
-    const linked = wavById.get(graph.links[region.id]);
-    const nextName = linked?.name.replace(/\.wav$/i, "");
-    const rename = nextName && nextName !== region.name ? format(l.renameTo, nextName) : "";
-    const name = region.name || l.unnamedRegion;
-    const control = button("region-node-" + region.id, "", () => {
-      graph.activeRegion = graph.activeRegion === region.id ? undefined : region.id;
-      render();
-    }, region.renderable);
-    control.className = "pair-node";
-    control.title = [name, region.renderLabel, region.renderError, rename].filter(Boolean).join("\n");
-    control.dataset.linked = String(Boolean(linked));
-    control.setAttribute("aria-pressed", String(graph.activeRegion === region.id));
+  for (const target of graph.targets) {
+    const region = graph.links.get(target.id);
+    if (!region) continue;
+    if (!targetsByRegion.has(region)) targetsByRegion.set(region, []);
+    targetsByRegion.get(region).push(target);
+  }
+
+  function updateSelection() {
+    const selectedRegion = graph.links.get(graph.selectedTarget);
+    for (const [id, { control }] of regionNodes) {
+      control.setAttribute("aria-pressed", String(graph.activeRegion === id));
+      control.classList.toggle("route-active", selectedRegion === id);
+    }
+    for (const [id, { control }] of wavNodes) {
+      control.setAttribute("aria-pressed", String(graph.selectedTarget === id));
+    }
+    for (const [id, wire] of wires) {
+      wire.classList.toggle("active", graph.selectedTarget === id || graph.links.get(id) === graph.activeRegion);
+    }
+    grid.classList.toggle("source-armed", Boolean(graph.activeRegion));
+  }
+
+  function selectCable(id) {
+    graph.activeRegion = undefined;
+    graph.selectedTarget = graph.links.has(id) ? id : undefined;
+    updateSelection();
+  }
+
+  function socket(control) {
     const port = node("span", "pair-port");
     port.setAttribute("aria-hidden", "true");
-    regionPorts.set(region.id, port);
+    control.append(port);
+    return port;
+  }
+
+  for (const region of graph.regions) {
+    const linked = targetsByRegion.get(region.id) || [];
+    const nextName = linked.length === 1 ? linked[0].name.replace(/\.wav$/i, "") : undefined;
+    const naming = linked.length > 1 ? format(l.reuseName, linked.length)
+      : nextName && nextName !== region.name ? format(l.renameTo, nextName) : "";
+    const name = region.name || l.unnamedRegion;
+    const control = button("region-node-" + region.id, "", (event) => {
+      if (event.detail && ignoreClick === region.id) return;
+      graph.activeRegion = graph.activeRegion === region.id ? undefined : region.id;
+      graph.selectedTarget = undefined;
+      updateSelection();
+    }, region.renderable);
+    control.className = "pair-node region-node";
+    control.title = [name, region.renderLabel, region.renderError, naming].filter(Boolean).join("\n");
+    control.dataset.linked = String(linked.length > 0);
     const track = region.renderError || region.renderLabel;
     control.append(node("span", "pair-title", name),
-      node("span", "pair-detail", ["R" + region.number, track, rename].filter(Boolean).join(" · ")), port);
+      node("span", "pair-detail", node("span", "region-number", "R" + region.number), track && " · " + track),
+      naming && node("span", "pair-detail route-name", naming));
     if (region.renderError) control.classList.add("render-unavailable");
+    regionNodes.set(region.id, { control, port: socket(control) });
+    control.addEventListener("pointerdown", (event) => {
+      if (control.disabled || event.button !== 0 || drag) return;
+      ignoreClick = undefined;
+      const { clientX: x, clientY: y, pointerId } = event;
+      drag = { region: region.id, x, y, startX: x, startY: y, pointerId };
+      control.setPointerCapture(pointerId);
+    });
     regions.append(control);
   }
 
   for (const target of graph.targets) {
-    const owner = linkedRegions.get(target.id);
+    const linked = graph.links.has(target.id);
     const row = previewRows.get(target.id);
     const control = button("wav-node-" + target.id, "", () => {
-      const region = graph.activeRegion || owner;
-      if (!graph.activeRegion) {
-        graph.activeRegion = region;
-        render();
-        return;
-      }
-      if (owner) delete graph.links[owner];
-      if (owner !== region) graph.links[region] = target.id;
-      graph.activeRegion = undefined;
-      remapRegions(graph);
-    }, Boolean(graph.activeRegion || owner));
+      if (graph.activeRegion) editRoute(graph, target.id, graph.activeRegion);
+      else selectCable(target.id);
+    });
     control.className = "pair-node wav-node";
     control.title = [target.originalsPath, ...(row?.references || []), row?.sample].filter(Boolean).join("\n");
-    control.dataset.linked = String(Boolean(owner));
-    const port = node("span", "pair-port");
-    port.setAttribute("aria-hidden", "true");
-    wavPorts.set(target.id, port);
+    control.dataset.linked = String(linked);
+    control.dataset.targetId = target.id;
     const directory = target.originals.replace(/[\\/][^\\/]+$/, "");
     const shared = target.references > 1 ? l.shared : "";
     control.append(node("span", "pair-title", target.name), node("span", "pair-detail", directory + shared));
-    if (row?.sample) control.append(node("span", "pair-detail", "Samples · " + (row.replace ? l.replace : l.add)));
-    control.append(port);
-    wavs.append(control);
+    if (row?.sample) control.append(node("span", "pair-detail sample-operation",
+      "Samples · " + (row.replace ? l.replace : l.add)));
+    wavNodes.set(target.id, { control, port: socket(control) });
+    const card = node("div", "wav-card", control);
+    if (linked) {
+      const disconnect = button("disconnect-" + target.id, "×", () => editRoute(graph, target.id));
+      disconnect.className = "disconnect";
+      disconnect.title = format(l.disconnect, target.name);
+      disconnect.setAttribute("aria-label", disconnect.title);
+      card.classList.add("has-disconnect");
+      card.append(disconnect);
+    }
+    wavs.append(card);
   }
 
   const svgNamespace = "http://www.w3.org/2000/svg";
-  const connections = document.createElementNS(svgNamespace, "svg");
-  connections.classList.add("pair-connections");
+  const svg = (tag, css) => {
+    const element = document.createElementNS(svgNamespace, tag);
+    element.classList.add(css);
+    return element;
+  };
+  const connections = svg("svg", "pair-connections");
   connections.setAttribute("aria-hidden", "true");
+  for (const [target] of graph.links) {
+    const wire = svg("g", "cable");
+    const line = svg("path", "cable-line");
+    const hit = svg("path", "cable-hit");
+    hit.addEventListener("click", () => {
+      if (state.busy) return;
+      selectCable(target);
+      wavNodes.get(target).control.focus({ preventScroll: true });
+    });
+    wire.append(line, hit);
+    wires.set(target, wire);
+    connections.append(wire);
+  }
+  const ghost = svg("path", "cable-preview");
+  connections.append(ghost);
+  grid.append(connections);
+
+  function cablePath(from, to, bounds) {
+    const x1 = from.x - bounds.left;
+    const x2 = to.x - bounds.left;
+    const y1 = from.y - bounds.top;
+    const y2 = to.y - bounds.top;
+    const bend = Math.max(22, (x2 - x1) * .5);
+    return ["M", x1, y1, "C", x1 + bend, y1, x2 - bend, y2, x2, y2].join(" ");
+  }
+
+  function center({ port }) {
+    const { left, top, width, height } = port.getBoundingClientRect();
+    return { x: left + width / 2, y: top + height / 2 };
+  }
+
   drawConnections = () => {
     const bounds = connections.getBoundingClientRect();
-    const paths = [];
-    for (const [region, wav] of Object.entries(graph.links)) {
-      const from = regionPorts.get(region).getBoundingClientRect();
-      const to = wavPorts.get(wav).getBoundingClientRect();
-      const x1 = from.left + from.width / 2 - bounds.left;
-      const x2 = to.left + to.width / 2 - bounds.left;
-      const y1 = from.top + from.height / 2 - bounds.top;
-      const y2 = to.top + to.height / 2 - bounds.top;
-      const center = (x1 + x2) / 2;
-      const path = document.createElementNS(svgNamespace, "path");
-      path.setAttribute("d", "M " + x1 + " " + y1 + " C " + center + " " + y1 + " " + center + " " + y2 + " " + x2 + " " + y2);
-      if (region === graph.activeRegion) path.classList.add("active");
-      paths.push(path);
+    for (const [target, wire] of wires) {
+      const path = cablePath(center(regionNodes.get(graph.links.get(target))), center(wavNodes.get(target)), bounds);
+      for (const line of wire.children) line.setAttribute("d", path);
     }
-    connections.replaceChildren(...paths);
   };
-  return node("div", "graph-wrapper", node("div", "pair-grid", regions, wavs, connections));
+
+  function dropTarget(x, y) {
+    const control = document.elementFromPoint(x, y)?.closest(".wav-node");
+    return grid.contains(control) ? control.dataset.targetId : undefined;
+  }
+
+  function paintDrag() {
+    if (!drag || !grid.isConnected) return;
+    const { x, y } = drag;
+    const view = viewport.getBoundingClientRect();
+    if (x >= view.left && x <= view.right && y >= view.top && y <= view.bottom) {
+      if (y - view.top < 24) viewport.scrollTop -= 8;
+      else if (view.bottom - y < 24) viewport.scrollTop += 8;
+    }
+    const target = dropTarget(x, y);
+    if (target !== drag.target) {
+      wavNodes.get(drag.target)?.control.classList.remove("drop-target");
+      wavNodes.get(target)?.control.classList.add("drop-target");
+      drag.target = target;
+    }
+    const end = target ? center(wavNodes.get(target)) : { x, y };
+    ghost.setAttribute("d", cablePath(center(regionNodes.get(drag.region)), end, connections.getBoundingClientRect()));
+    animation = requestAnimationFrame(paintDrag);
+  }
+
+  function stopDrag() {
+    if (!drag) return;
+    cancelAnimationFrame(animation);
+    wavNodes.get(drag.target)?.control.classList.remove("drop-target");
+    ghost.removeAttribute("d");
+    grid.classList.remove("routing");
+    drag = undefined;
+  }
+
+  grid.addEventListener("pointermove", (event) => {
+    if (drag?.pointerId !== event.pointerId) return;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    if (!drag.moved && Math.hypot(drag.x - drag.startX, drag.y - drag.startY) >= 5) {
+      drag.moved = true;
+      grid.classList.add("routing");
+      animation = requestAnimationFrame(paintDrag);
+    }
+  });
+  grid.addEventListener("pointerup", (event) => {
+    if (drag?.pointerId !== event.pointerId) return;
+    const { region, moved } = drag;
+    const target = moved && dropTarget(event.clientX, event.clientY);
+    stopDrag();
+    if (moved) ignoreClick = region;
+    if (target) editRoute(graph, target, region);
+  });
+  for (const event of ["pointercancel", "lostpointercapture"]) {
+    grid.addEventListener(event, (detail) => { if (drag?.pointerId === detail.pointerId) stopDrag(); });
+  }
+  grid.addEventListener("keydown", (event) => {
+    if (state.busy) return;
+    if (event.key === "Delete" && graph.selectedTarget) {
+      event.preventDefault();
+      editRoute(graph, graph.selectedTarget);
+    } else if (event.key === "Escape" && (drag || graph.activeRegion || graph.selectedTarget)) {
+      event.preventDefault();
+      stopDrag();
+      selectCable(undefined);
+    }
+  });
+  updateSelection();
+
+  const headings = node("div", "pair-headings", node("h2", "pair-heading", l.regionNodes),
+    node("h2", "pair-heading", l.wavNodes));
+  return node("div", "route-board", headings, viewport);
 }
 
 function transferActions() {
   const l = state.labels;
   const graph = state.transfer?.kind === "regions" ? state.transfer : undefined;
   const plan = graph ? graph.plan : state.transfer;
-  const count = graph ? Object.keys(graph.links).length : plan?.rows.length;
+  const count = graph ? graph.links.size : plan?.rows.length;
   const isReady = state.project.waapi && (!state.syncSamples || Boolean(state.project.samples));
   const levels = !graph && segments("placement", [["same", l.sameLevel], ["parent", l.parentLevel]], state.placement, (value) => {
     state.placement = value;
     state.transfer = undefined;
   });
   if (levels) levels.title = l.newSoundLocation;
-  const commands = node("div", "toolbar", levels,
+  const commands = node("div", "toolbar command-bar",
     button("preview-transfer", l.previewTransfer, () => {
       state.transfer = undefined;
       run("transfer.preview", {
         placement: state.placement, syncSamples: state.syncSamples, renderPreset: state.renderPreset,
       }, l.previewing, (result) => {
-        if (result.kind === "regions") result.links = { ...result.links };
+        if (result.kind === "regions") result.links = new Map(Object.entries(result.links));
         state.transfer = result;
       });
-    }, isReady),
-    (graph || plan) && node("div", "actions", button("publish-transfer", format(graph ? l.replaceCount : l.transferCount, count), () => {
-      state.transfer = undefined;
-      run("transfer.publish", { preview: plan.id }, l.transferring, () => { state.update = undefined; });
-    }, isReady && Boolean(plan), true)),
+    }, isReady, !graph && !plan),
+    levels,
   );
-  const settings = renderSetup(undefined, graph);
-  if (graph) return [samplesControls(), settings, commands,
-    node("div", "pair-summary", node("strong", "", format(l.pairCount, count, graph.regions.length)),
-      node("span", "muted", l.pairHint)),
-    regionGraph(graph)];
-  if (!plan) return [samplesControls(), settings, commands,
-    node("p", "hint", state.project.waapi ? l.transferHint : l.needWaapi)];
+  const settings = node("div", "control-rack", samplesControls(), renderSetup(undefined, graph));
+  const publish = (graph || plan) && button("publish-transfer",
+    format(graph ? l.replaceCount : l.transferCount, count), () => {
+      if (graph) graph.plan = undefined;
+      else state.transfer = undefined;
+      run("transfer.publish", { preview: plan.id }, l.transferring, () => {
+        state.update = state.transfer = undefined;
+      });
+    }, isReady && Boolean(plan), true);
+  if (graph) {
+    const mapping = format(l.pairCount, new Set(graph.links.values()).size, count);
+    const clear = button("clear-links", l.clearLinks, () => {
+      graph.links.clear();
+      graph.activeRegion = graph.selectedTarget = undefined;
+      remapRegions(graph, "preview-transfer");
+    }, count > 0);
+    return [commands, settings, node("section", "route-panel",
+      node("div", "route-toolbar", node("div", "route-instructions",
+        node("strong", "mapping-count", mapping), node("span", "route-hint", l.pairHint)), clear),
+      regionGraph(graph),
+      node("div", "transfer-bar", plan?.project && node("span", "transfer-project muted", plan.project), publish),
+    )];
+  }
+  if (!plan) return [commands, settings,
+    node("div", "empty-preview", node("p", "hint", state.project.waapi ? l.transferHint : l.needWaapi))];
   const destination = node("div", "destination", node("strong", "", "Wwise"), plan.target,
     node("span", "muted", "Originals / " + plan.folder));
-  return [samplesControls(), settings, commands, destination, previewTable(plan, "transfer")];
+  return [commands, settings, destination, previewTable(plan, "transfer"), node("div", "transfer-bar", publish)];
 }
 
-function render() {
+function render(active = document.activeElement?.dataset?.focus) {
   const l = state.labels;
-  const active = document.activeElement?.dataset?.focus;
   const scrollable = ".table-wrapper, .graph-wrapper";
   const scroll = app.querySelector(scrollable)?.scrollTop || 0;
   drawConnections = undefined;
@@ -503,8 +674,12 @@ function render() {
     if (port.valueAsNumber !== state.project.port) run("port.set", { port: port.valueAsNumber }, "", applyProject);
   });
 
+  const mark = node("span", "brand-mark", ...Array.from({ length: 5 }, () => node("i")));
+  mark.setAttribute("aria-hidden", "true");
+  const projectName = node("div", "project-name", state.project.project);
+  projectName.title = l.project + " · " + state.project.project;
   const headline = node("header", "masthead",
-    node("div", "", node("h1", "", "PsyReaWwise WebView"), node("div", "project-name", l.project + " · " + state.project.project)),
+    node("div", "brand", mark, node("div", "brand-label", node("h1", "", "PsyReaWwise"), projectName)),
     node("label", "port", l.port, port),
   );
   const tabs = node("nav", "tabs");
